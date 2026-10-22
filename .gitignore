@@ -7,3 +7,4 @@ playwright-report/
 .DS_Store
 out/
 .taste-skill/
+.claude/settings.local.json
