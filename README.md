@@ -36,7 +36,7 @@ npm run test:slow    # non-régression complète : AG v1 sur 3 000 générations
 ## Jalons
 
 - [x] J0 : socle Vite + TS, portage v1 vérifié bit à bit, non-régression
-- [ ] J1 : pipeline circuit (OSM, GPX/GeoJSON, échelle officielle, requêtes spatiales)
+- [x] J1 : pipeline circuit (OSM, GPX/GeoJSON, échelle officielle, requêtes spatiales)
 - [ ] J2 : physique dynamique
 - [ ] J3 : IA headless (neuroévolution)
 - [ ] J4 : interface console et carte 2D
@@ -45,3 +45,12 @@ npm run test:slow    # non-régression complète : AG v1 sur 3 000 générations
 - [ ] J7 : finition, mobile
 
 Tracé : © contributeurs OpenStreetMap (ODbL).
+
+## Ajouter un circuit
+
+1. Obtenir le tracé d'un tour complet, dans le sens de roulage :
+   - une trace GPX (RaceChrono, Strava, etc.) ;
+   - une LineString GeoJSON ;
+   - ou une réponse Overpass (`out body geom`) dont les ways se raccordent par leurs extrémités.
+2. Créer `data/tracks/<id>.json` au format `TrackDef` (voir `src/track/types.ts`) : `id`, `name`, `coords` en `[lat, lon]`, `width`, et si besoin `officialLength`, `bridge` (`{ height, ramp, plateau }`) et `startFrac`. `parseTrackFile()` (`src/track/import.ts`) convertit les trois formats ci-dessus.
+3. Pour le LYL, `npx tsx scripts/fetch-osm.ts` récupère les ways 1388683501 et 1388688194 et les compare au fichier ; `--write` met à jour le fichier.
