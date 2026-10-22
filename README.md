@@ -1,79 +1,93 @@
-# Kart Lap Lab v2
+# Kart Lap Lab
 
-Des pilotes à réseau de neurones apprennent à boucler le LYL International Karting Circuit (Sungai Long, Kajang) en kart de location Sodikart 270cc ou 390cc. La v1, qui optimise une trajectoire par algorithme génétique, reste disponible dans `legacy/` et sert de « tour théorique » de référence.
+**Des pilotes à réseau de neurones apprennent à boucler le LYL International Karting Circuit** (Sungai Long, Kajang, Malaisie) en kart de location 270cc ou 390cc, génération après génération, dans le navigateur. On les regarde progresser en 3D de nuit, puis on étudie le meilleur tour pour savoir où freiner, où remettre les gaz et par où passer.
 
-## Utilisation
+![Vue Piste : la génération en cours, le chronométrage et le temps perdu par virage](docs/images/apercu.png)
 
-1. `npm run dev`, puis ouvrir http://localhost:5173.
-2. **Lancer** : une population de pilotes (256 par défaut) roule en parallèle dans des Web Workers. La vue « Génération en cours » montre la génération entière en karts semi-transparents, avec le meilleur en ambre.
-3. **Meilleur tour** : replay du meilleur cerveau avec les caméras embarquée, poursuite, hélico et libre, le HUD (vitesse, pédales, g-mètre, prochain virage) et un fantôme au choix (tour théorique, génération N−50, autre kart).
-4. **Pédales** : le bouton « Ligne : pédales » colore la trajectoire 3D (vert = gaz, rouge = frein, intensité = dosage), et la télémétrie trace le gaz et le frein en % le long du tour.
-5. **Télémétrie** et **fiche virages** : point de freinage, vitesses d'entrée, de corde et de sortie, placement, écart avec le fantôme. Un clic rejoue le passage concerné en 3D.
-6. **Kart et calage** : saisir un tour parfait visé, puis recaler la puissance, l'adhérence ou les deux. Les cerveaux sont gardés dans le navigateur et s'exportent en JSON.
+## Ce qu'on y voit
 
-Entraînement sans interface : `npx tsx scripts/train-headless.ts --kart k270 --minutes 10`.
+| | |
+|---|---|
+| ![Génération en cours : le peloton gris et le meneur en ambre](docs/images/live-peloton.png) | **Génération en cours.** Toute la génération roule en même temps : les pilotes en gris, celui qui mène en ambre, suivi par la caméra. Le HUD donne le meilleur tour de la génération et le gain sur la précédente. |
+| ![Meilleur tour en poursuite, trajectoire colorée par les pédales](docs/images/pedales.png) | **Meilleur tour.** Replay avec quatre caméras (embarquée, poursuite, hélico, libre), le HUD (vitesse, pédales, g-mètre, prochain virage) et un fantôme : le tour parfait, la génération N−50 ou l'autre kart. La trajectoire se colore par vitesse ou par pédales (vert = gaz, rouge = frein, intensité = dosage). |
+| ![Caméra embarquée à l'approche d'une épingle](docs/images/embarquee.png) | **Caméra embarquée.** Ce que voit le pilote, avec le conseil du prochain virage : où freiner, à quelle vitesse passer la corde. |
+| ![Tour de chronométrage](docs/images/chrono.png) | **Chronométrage.** Meilleur tour IA, écart au tour parfait et à ton record, plan du circuit avec la position du kart, et le meilleur tour des dernières générations : il ne recule jamais. |
+| ![Courbe d'apprentissage](docs/images/apprentissage.png) | **Apprentissage.** Le record (ambre) par génération, le taux de tours bouclés (vert) et le tour parfait (pointillé). |
 
-## Mettre en ligne
+![Vue Analyse : télémétrie et fiche virages](docs/images/analyse.png)
 
-Le site est 100 % statique : `npm run build` produit le dossier `dist/`. Aucun serveur ni en-tête particulier n'est nécessaire, et les Web Workers fonctionnent tels quels.
+**Analyse.** Vitesse, gaz et frein le long du tour face au tour parfait, et pour chacun des 19 virages : distance de freinage, vitesses d'entrée, de corde et de sortie, accélération latérale, placement et temps perdu. Un clic rejoue le passage en 3D.
 
-- **Le plus simple, sans ligne de commande :** sur https://app.netlify.com/drop, glisser-déposer le dossier `dist/`. Un compte gratuit garde le site en ligne.
-- **Vercel :** `npx vercel --prod` à la racine du projet (connexion demandée la première fois). Vercel détecte Vite tout seul.
-- **GitHub Pages :** pousser le dépôt sur GitHub, puis publier `dist/`. Les chemins relatifs (`base: './'`) font marcher le site dans un sous-dossier.
-
-Les cerveaux restent dans le navigateur de chaque visiteur. Pour en partager un, l'exporter en JSON puis l'importer.
-
-## Calage et hypothèses
-
-Les données du brief (9 ch, 62 km/h, µ 1,15) ne permettent pas de descendre sous 1:43, alors que les chronos réels du 270cc sont de 1:32 à 1:36 (1:33.33 relevé à 57,5 km/h de moyenne, soit un tour chronométré d'environ 1 491 m). Le kart est donc calé pour que le **tour parfait** (borne idéale : adhérence pleine, freinage combiné à 0,6 µg, accélération limitée par le moteur, vibreurs utilisables) fasse 1:31.5 : µ 1,3 et environ 9,9 ch effectifs. La pointe (80 km/h) et la transmission (variateur) sont des hypothèses. Une trace GPS (RaceChrono) permettrait de les caler vraiment.
+| | |
+|---|---|
+| ![Vue Cerveau : le réseau du meilleur pilote](docs/images/cerveau.png) | ![Version mobile](docs/images/mobile.png) |
+| **Cerveau.** Le réseau du meilleur pilote, avec ses activations en direct pendant le replay. | **Sur téléphone.** Même application, navigation en bas d'écran. |
 
 ## Lancer
 
 ```bash
 npm install
-npm run dev          # http://localhost:5173 (la v1 est à /legacy/kart-lap-lab.html)
-npm test             # tests rapides : portage v1 bit à bit, chargement du circuit
-npm run test:slow    # non-régression complète : AG v1 sur 3 000 générations (≈ 1 min)
+npm run dev        # http://localhost:5173
 ```
 
-## Organisation
+Clique **Lancer l'entraînement**. Le premier tour propre arrive en quelques secondes ; laisse tourner quelques minutes pour voir le temps descendre. Le meilleur cerveau est gardé dans le navigateur, et s'exporte en JSON depuis la vue Cerveau.
 
-| Dossier | Rôle |
-|---|---|
-| `src/track/` | Format de circuit générique, géométrie, virages, pont |
-| `src/sim/` | Physique pure (sans DOM) : solveur quasi-statique v1, AG de trajectoire, puis modèle dynamique |
-| `src/ai/` | Réseaux de neurones et neuroévolution (à venir) |
-| `src/ui/` | Interface (à venir) |
-| `data/tracks/` | Circuits au format `TrackDef` (JSON) |
-| `legacy/` | v1 d'origine, intacte |
+```bash
+npm test           # 69 tests : physique, piste, IA, non-régression v1, calage
+npm run test:slow  # non-régression complète de la v1 (≈ 1 min)
+npm run build      # site statique dans dist/
+npx tsx scripts/train-headless.ts --kart k270 --minutes 10   # entraînement sans interface
+```
 
-## Référence v1 (non-régression)
+## Mettre en ligne sur GitHub Pages
 
-Échelle OSM brute (1 575 m), µ = 1,15, pilote 75 kg, AG seedé (12345), 3 000 générations :
+Le dépôt contient le workflow `.github/workflows/pages.yml` : à chaque push sur `main` ou `master`, GitHub lance les tests, construit le site et le publie.
 
-| Kart | Tour théorique v1 |
-|---|---|
-| 390cc | 1:36.85 |
-| 270cc | 1:43.86 |
+1. Crée un dépôt vide sur GitHub (sans README).
+2. Dans ce dossier :
+   ```bash
+   git remote add origin https://github.com/<ton-compte>/<ton-depot>.git
+   git push -u origin master
+   ```
+3. Sur GitHub : **Settings → Pages → Source : GitHub Actions**.
+4. Le site est en ligne à `https://<ton-compte>.github.io/<ton-depot>/` après le premier passage du workflow (onglet **Actions**, environ 2 minutes).
 
-## Jalons
+Tout est statique (pas de serveur, pas d'en-tête particulier) : chaque visiteur entraîne ses propres pilotes sur les cœurs de sa machine.
 
-- [x] J0 : socle Vite + TS, portage v1 vérifié bit à bit, non-régression
-- [x] J1 : pipeline circuit (OSM, GPX/GeoJSON, échelle officielle, requêtes spatiales)
-- [x] J2 : physique dynamique (calage absolu en attente de données)
-- [x] J3 : IA headless (neuroévolution sep-CMA-ES, premier tour propre en quelques secondes)
-- [x] J4 : interface console (la carte 2D est remplacée par la vue hélico et la vue libre en 3D)
-- [x] J5 : 3D de nuit, mode live, replay avec 4 caméras
-- [x] J6 : télémétrie, fiche virages, fantômes, réseau
-- [ ] J7 : finition (tests E2E Playwright, mobile vérifié, entraînements plus longs)
+## Comment ça marche
 
-Tracé : © contributeurs OpenStreetMap (ODbL).
+**La physique** tourne à 120 Hz, de façon déterministe : pneus Pacejka simplifiés, essieu arrière rigide, frein arrière seul qui peut bloquer, roue intérieure qui se soulève en virage serré, transfert de charge, pente du pont, herbe, vibreurs, murs de pneus. Un tête-à-queue est possible.
+
+**Le pilote** est un réseau de neurones 18-16-3. Il reçoit 9 rayons vers les bords de piste, sa vitesse, sa dérive, son lacet, son écart latéral, son erreur de cap, son braquage actuel et la courbure de la piste à 10, 25 et 50 m. Il décide 30 fois par seconde de la direction, du gaz et du frein, avec l'inertie des mains sur le volant.
+
+**L'apprentissage** est une neuroévolution (sep-CMA-ES) : à chaque génération, 256 variantes du cerveau roulent en parallèle dans des Web Workers ; les meilleures orientent la génération suivante. Le meilleur pilote reroule à chaque génération, donc le record ne recule jamais. D'abord finir le tour, ensuite aller vite ; scier le volant ou tapoter les pédales coûte des points.
+
+**Le tour parfait** est une borne quasi-statique : la meilleure trajectoire possible pour ce kart, avec son adhérence, son moteur et son freinage. Il sert de fantôme et de référence pour le temps perdu par virage.
+
+## Calage et hypothèses
+
+Avec les données d'un kart de location (9 ch, 62 km/h, µ 1,15), même un pilote parfait ne descend pas sous 1:43, alors que les chronos réels au LYL sont de 1:32 à 1:36 en 270cc (un tour en 1:33.33 relevé à 57,5 km/h de moyenne). Le kart est donc calé pour que le tour parfait fasse **1:31.5**, juste sous les meilleurs chronos connus, avec µ 1,3 et environ 9,9 ch effectifs.
+
+La vitesse de pointe (80 km/h) et la transmission (variateur) sont des hypothèses. Une trace GPS d'un tour réel (RaceChrono, par exemple) permettrait de les caler, et de comparer ta trajectoire à celle de l'IA virage par virage. La vue Kart permet de recaler le modèle sur un autre temps.
 
 ## Ajouter un circuit
 
-1. Obtenir le tracé d'un tour complet, dans le sens de roulage :
-   - une trace GPX (RaceChrono, Strava, etc.) ;
-   - une LineString GeoJSON ;
-   - ou une réponse Overpass (`out body geom`) dont les ways se raccordent par leurs extrémités.
-2. Créer `data/tracks/<id>.json` au format `TrackDef` (voir `src/track/types.ts`) : `id`, `name`, `coords` en `[lat, lon]`, `width`, et si besoin `officialLength`, `bridge` (`{ height, ramp, plateau }`) et `startFrac`. `parseTrackFile()` (`src/track/import.ts`) convertit les trois formats ci-dessus.
-3. Pour le LYL, `npx tsx scripts/fetch-osm.ts` récupère les ways 1388683501 et 1388688194 et les compare au fichier ; `--write` met à jour le fichier.
+1. Récupère le tracé d'un tour complet dans le sens de roulage : trace GPX, LineString GeoJSON, ou réponse Overpass (`out body geom`).
+2. Crée `data/tracks/<id>.json` au format `TrackDef` (voir `src/track/types.ts`) : `id`, `name`, `coords` en `[lat, lon]`, `width`, et si besoin `officialLength`, `bridge` et `startFrac`. `parseTrackFile()` (`src/track/import.ts`) convertit les trois formats.
+3. Pour le LYL, `npx tsx scripts/fetch-osm.ts` récupère les ways OSM 1388683501 et 1388688194 et les compare au fichier ; `--write` le met à jour.
+
+## Organisation du code
+
+| Dossier | Rôle |
+|---|---|
+| `src/track/` | Format de circuit, import GPX/GeoJSON/Overpass, géométrie, virages, pont, requêtes spatiales |
+| `src/sim/` | Physique pure (sans DOM) : modèle dynamique, moteur, tour parfait, calage, solveur et AG de la v1 |
+| `src/ai/` | Réseau, capteurs, épisodes, sep-CMA-ES, pool de workers, enregistrement des tours |
+| `src/workers/` | Workers du navigateur : simulation et outils (replay, tour parfait, calage) |
+| `src/ui/` | Interface : vues, scène 3D (Three.js), graphiques, réseau |
+| `data/tracks/` | Circuits au format `TrackDef` |
+| `legacy/` | La v1, intacte (lien depuis la vue Kart) |
+
+## Crédits
+
+Tracé du circuit : © contributeurs [OpenStreetMap](https://www.openstreetmap.org/copyright), sous licence ODbL.

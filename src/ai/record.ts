@@ -129,6 +129,9 @@ export function cornerSheet(track: Track, run: Run): CornerSheetRow[] {
       else if (kB >= 0) break;
     }
     const kExit = at(run.dist[kA] + 25);
+    // entry speed: the fastest point in the 60 m before the apex (where the slowing starts, brakes or not)
+    let vEntry = run.v[kA];
+    for (let k = at(run.dist[kA] - 60); k <= kA; k++) vEntry = Math.max(vEntry, run.v[k]);
     let latG = 0;
     for (let k = k0; k <= k1; k++) latG = Math.max(latG, Math.abs(run.ay[k]) / 9.81);
     const inside = c.dir === 'G' ? run.d[kA] : -run.d[kA];
@@ -137,7 +140,7 @@ export function cornerSheet(track: Track, run: Run): CornerSheetRow[] {
     return {
       name: c.name, dir: c.dir, kind: c.kind, angle: c.angle,
       brakeDist: kB >= 0 ? run.dist[kA] - run.dist[kB] : 0,
-      vEntry: run.v[kB >= 0 ? kB : kA], vApex: run.v[kA], vExit: run.v[kExit], latG,
+      vEntry, vApex: run.v[kA], vExit: run.v[kExit], latG,
       apexFromInside: track.half - inside, tApex: run.t[kA], tBrake: kB >= 0 ? run.t[kB] : run.t[kA],
       sectorTime: run.t[kS1] - run.t[kS0], distApex: run.dist[kA], distBrake: kB >= 0 ? run.dist[kB] : -1,
     };

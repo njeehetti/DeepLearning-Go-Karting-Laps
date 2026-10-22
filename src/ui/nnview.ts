@@ -55,7 +55,7 @@ export class NnView {
           t.setAttribute('text-anchor', l === 0 ? 'end' : 'start');
           t.setAttribute('fill', '#8796a1');
           t.setAttribute('font-size', '10');
-          t.setAttribute('font-family', 'IBM Plex Mono, monospace');
+          t.setAttribute('font-family', 'Public Sans, system-ui, sans-serif');
           this.svg.appendChild(t);
         }
       }
@@ -73,7 +73,7 @@ export class NnView {
       for (let l = 1; l < e.l; l++) o += sizes[l] * (sizes[l - 1] + 1);
       const wgt = params[o + e.j * (sizes[e.l - 1] + 1) + e.i];
       const a = Math.min(1, Math.abs(wgt) / maxW);
-      e.el.setAttribute('stroke', wgt > 0 ? '#f1a33b' : '#9fd3ff');
+      e.el.setAttribute('stroke', wgt > 0 ? '#f1a33b' : '#4a8ad6');
       e.el.setAttribute('stroke-opacity', String(0.04 + 0.5 * a * a));
       e.el.setAttribute('stroke-width', String(0.4 + 1.6 * a));
     }
@@ -87,7 +87,7 @@ export class NnView {
       const last = l === this.mlp.act.length - 1;
       layer.forEach((v, k) => {
         const a = Math.max(-1, Math.min(1, last ? Math.tanh(v) : v));
-        const c = a >= 0 ? `rgba(241,163,59,${0.15 + 0.85 * a})` : `rgba(159,211,255,${0.15 + 0.85 * -a})`;
+        const c = a >= 0 ? `rgba(241,163,59,${0.15 + 0.85 * a})` : `rgba(74,138,214,${0.15 + 0.85 * -a})`;
         this.nodes[l][k].setAttribute('fill', c);
       });
     });

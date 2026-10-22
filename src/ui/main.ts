@@ -77,6 +77,9 @@ const S = {
   theory: new Map<string, { lap: number; run: Run }>(),
   mode: 'live' as 'live' | 'replay',
   lineMode: 'speed' as 'speed' | 'pedals',
+  theorySheet: [] as CornerSheetRow[],
+  view: 'piste' as string,
+  pose: null as { x: number; y: number } | null,
   cam: 'heli' as CamMode,
   play: { t: 0, playing: true, rate: 1 },
   live: {
@@ -143,16 +146,25 @@ const nn = new NnView($('nn'));
 
 // ---------- header / meta ----------
 function updateHeader(): void {
-  const c = calibOf(S.kartId);
-  $('t-kart').textContent = `${KARTS[S.kartId].label} · pilote ${c.driver} kg`;
-  $('t-best').textContent = fmtLap(S.best?.lap ?? NaN);
+  $('t-kart').textContent = KARTS[S.kartId].label;
+  const best = S.best?.lap ?? NaN;
+  $('t-best').textContent = fmtLap(best);
   const th = S.theory.get(S.kartId);
   $('t-theory').textContent = th ? fmtLap(th.lap) : '…';
-  $('t-you').textContent = S.kartId === 'k270' ? fmtLap(LAP_EVIDENCE.driverBest270) : '–';
+  const you = S.kartId === 'k270' ? LAP_EVIDENCE.driverBest270 : NaN;
+  $('t-you').textContent = fmtLap(you);
+  const gap = Number.isFinite(best) && th ? best - th.lap : NaN;
+  $('t-gap').innerHTML = Number.isFinite(gap)
+    ? `<span class="neg">+${fr(gap, 2)} s</span> sur le tour parfait${Number.isFinite(you) ? ` · ${best <= you ? `<span class="pos">−${fr(you - best, 2)} s</span> sous ton record` : `+${fr(best - you, 2)} s sur ton record`}` : ''}`
+    : 'Pas encore de tour propre';
+  const gens = S.trainer?.history.length ?? 0;
+  $('finding').innerHTML = !S.best
+    ? `Lance l'entraînement : ${S.pop} pilotes vont apprendre la piste en parallèle.`
+    : `Meilleur tour IA <b>${fmtLap(best)}</b>${th ? `, à <b>${fr(gap, 2)} s</b> du tour parfait` : ''}${S.sheet.length && S.theorySheet.length ? ` · le plus de temps perdu en <b>${worstCorner()}</b>` : ''}${gens ? ` · génération ${gens}` : ''}.`;
   const pill = $('status');
-  pill.className = 'pill' + (S.running ? ' on' : '');
-  pill.querySelector('span')!.textContent = S.running ? 'Entraînement' : 'En pause';
-  $('run').textContent = S.running ? 'Pause' : S.trainer && S.trainer.history.length ? 'Reprendre' : 'Lancer';
+  pill.className = 'status' + (S.running ? ' on' : '');
+  pill.querySelector('span')!.textContent = S.running ? 'Entraînement en cours' : 'En pause';
+  $('run').textContent = S.running ? 'Mettre en pause' : S.trainer && S.trainer.history.length ? 'Reprendre l’entraînement' : 'Lancer l’entraînement';
   $('k270').setAttribute('aria-pressed', String(S.kartId === 'k270'));
   $('k390').setAttribute('aria-pressed', String(S.kartId === 'k390'));
 }
@@ -169,7 +181,7 @@ function updateMeta(): void {
     ['Masse', `${k.kartMass} kg + pilote ${c.driver} kg`],
     ['Tour parfait visé', Number.isFinite(c.targetLap) ? fmtLap(c.targetLap) : 'pas de donnée'],
   ];
-  $('kart-meta').innerHTML = rows.map(([a, b, w]) => `<span>${a}</span><b${w ? ' class="warn"' : ''}>${b}</b>`).join('');
+  $('kart-meta').innerHTML = rows.map(([a, b, w]) => `<div><dt>${a}</dt><dd${w ? ' class="warn"' : ''}>${b}</dd></div>`).join('');
   ($('mylap') as HTMLInputElement).value = Number.isFinite(c.targetLap) ? fmtLap(c.targetLap) : '';
   ($('calmode') as HTMLSelectElement).value = c.mode;
 }
@@ -178,7 +190,11 @@ function updateMeta(): void {
 async function loadTheory(k: KartId): Promise<void> {
   if (S.theory.has(k)) return;
   const r = await ask({ type: 'theory', world: worldOf(k), gens: 300 });
-  if (r.type === 'theory') S.theory.set(k, { lap: r.lap, run: r.run });
+  if (r.type === 'theory') {
+    S.theory.set(k, { lap: r.lap, run: r.run });
+    if (k === S.kartId) S.theorySheet = cornerSheet(track, r.run);
+    renderStrip();
+  }
   updateHeader();
   if (S.ghostMode === 'theory') void refreshGhost();
   if (S.trainer) drawEvoNow();
@@ -330,6 +346,8 @@ function onGen(tr: Trainer, s: GenStats): void {
     else S.live.pending = g;
   }
   drawEvoNow();
+  renderGens(tr);
+  updateHeader();
 }
 function drawEvoNow(): void {
   if (!S.trainer) return;
@@ -478,10 +496,12 @@ function seek(t: number): void {
   S.play.t = Math.max(0, t);
   showReplay();
   if (S.cam === 'free' || S.cam === 'heli') setCam('chase');
+  if (S.view !== 'piste') location.hash = '#piste';
 }
 
 // ---------- corner sheet ----------
 function renderSheet(): void {
+  renderStrip();
   const tb = $('corners');
   const rows = S.sheet;
   $('th-delta').textContent = S.ghost ? 'Écart fantôme' : '';
@@ -497,7 +517,7 @@ function renderSheet(): void {
       const g = S.ghostSheet[i];
       const dt = g ? r.sectorTime - g.sectorTime : NaN;
       const delta = Number.isFinite(dt) ? `<span class="${dt <= 0 ? 'pos' : 'neg'}">${dt <= 0 ? '−' : '+'}${fr(Math.abs(dt), 2)} s</span>` : '';
-      return `<tr data-i="${i}"${i === S.selCorner ? ' class="sel"' : ''}><td class="nm">${r.name}</td><td class="kind"><span class="dir">${r.dir}</span>${r.kind} · ${Math.round(r.angle)}°</td><td>${brake}</td><td>${kmh(r.vEntry)} km/h</td><td>${kmh(r.vApex)} km/h</td><td>${kmh(r.vExit)} km/h</td><td>${fr(r.latG, 2)} g</td><td>${place}</td><td>${delta}</td></tr>`;
+      return `<tr data-i="${i}"${i === S.selCorner ? ' class="sel"' : ''}><td class="nm">${r.name}</td><td class="kind"><span class="dir">${r.dir}</span>${r.kind} · ${Math.round(r.angle)}°</td><td class="num">${brake}</td><td class="num">${kmh(r.vEntry)} km/h</td><td class="num">${kmh(r.vApex)} km/h</td><td class="num">${kmh(r.vExit)} km/h</td><td class="num">${fr(r.latG, 2)} g</td><td class="num">${place}</td><td class="num">${delta}</td></tr>`;
     })
     .join('');
 }
@@ -661,6 +681,7 @@ function tick(now: number): void {
     scene.setHero(null);
     scene.setGhost(null);
     target = leader >= 0 ? poses[leader] : null;
+    S.pose = target;
     if (frame % 3 === 0) liveHud(leader, leaderV, el);
   } else {
     scene.setCrowd([], -1);
@@ -674,6 +695,7 @@ function tick(now: number): void {
     const g = S.ghost ? poseAt(S.ghost, S.play.t) : null;
     scene.setGhost(g);
     target = p;
+    S.pose = p;
     const a = poseAt(run, S.play.t + Math.max(0.35, 13 / Math.max(5, p.v)));
     ahead = a;
     if (frame % 3 === 0) {
@@ -683,14 +705,146 @@ function tick(now: number): void {
     }
     if (frame % 6 === 0) drawTelNow(p.dist);
   }
+  if (frame % 3 === 0 && S.view === 'piste') drawMinimap();
   scene.render(dt, target, ahead);
 }
+
+// ---------- views (icon rail) ----------
+function showView(v: string): void {
+  if (!document.querySelector(`.view[data-view="${v}"]`)) v = 'piste';
+  S.view = v;
+  document.querySelectorAll<HTMLElement>('.view').forEach((el) => (el.hidden = el.dataset.view !== v));
+  document.querySelectorAll<HTMLElement>('.nav').forEach((a) => (a.dataset.view === v ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current')));
+  requestAnimationFrame(() => {
+    const r = $('view3d').getBoundingClientRect();
+    scene.resize(r.width, r.height);
+    sizeMinimap();
+    drawEvoNow();
+    drawTelNow(-1);
+  });
+}
+window.addEventListener('hashchange', () => showView(location.hash.slice(1)));
+
+// ---------- timing tower: generation list ----------
+function renderGens(tr: Trainer): void {
+  const h = tr.history;
+  const rows: string[] = [];
+  for (let i = h.length - 1; i >= 0 && rows.length < 6; i--) {
+    const s = h[i];
+    const prev = i > 0 ? h[i - 1].bestLap : NaN;
+    const d = Number.isFinite(s.bestLap) && Number.isFinite(prev) ? s.bestLap - prev : NaN;
+    const dTxt = Number.isFinite(d) ? (d < -0.0005 ? `−${fr(-d, 3)}` : '=') : '–';
+    rows.push(`<li><span>Génération ${s.gen}</span><span>${fmtLap(s.bestLap)}</span><span class="d${d < -0.0005 ? ' pos' : ''}">${dTxt}</span></li>`);
+  }
+  $('gen-list').innerHTML = rows.join('') || '<li class="empty">Aucune génération pour l’instant</li>';
+}
+
+// ---------- signature: time lost per corner against the perfect lap ----------
+function worstCorner(): string {
+  let w = -1;
+  let wd = -Infinity;
+  S.sheet.forEach((r, i) => {
+    const t = S.theorySheet[i];
+    if (t && r.sectorTime - t.sectorTime > wd) {
+      wd = r.sectorTime - t.sectorTime;
+      w = i;
+    }
+  });
+  return w >= 0 ? `${S.sheet[w].name} (+${fr(wd, 2)} s)` : '–';
+}
+function renderStrip(): void {
+  const el = $('strip');
+  if (!S.sheet.length) {
+    el.innerHTML = '<p class="empty">Le premier tour propre remplira cette bande : un bloc par virage, rouge là où le pilote perd du temps.</p>';
+    return;
+  }
+  const losses = S.sheet.map((r, i) => (S.theorySheet[i] ? r.sectorTime - S.theorySheet[i].sectorTime : NaN));
+  const max = Math.max(0.3, ...losses.filter(Number.isFinite));
+  el.innerHTML = S.sheet
+    .map((r, i) => {
+      const l = losses[i];
+      const a = Number.isFinite(l) ? Math.max(0, Math.min(1, l / max)) : 0;
+      // one ramp from the neutral raised tone to the negative colour, by share of the worst loss
+      // faster than the perfect lap (the quasi-static bound is not exact corner by corner): green
+      const bg = l < -0.02 ? 'color-mix(in srgb, var(--positive) 45%, var(--raised))' : `color-mix(in srgb, var(--negative) ${Math.round(a * 70)}%, var(--raised))`;
+      return `<button data-i="${i}" aria-pressed="${i === S.selCorner}" style="background:${bg}" title="${r.name} · ${r.kind}"><b>${r.name}</b><span>${Number.isFinite(l) ? (l >= 0 ? '+' : '−') + fr(Math.abs(l), 2) : '–'}</span></button>`;
+    })
+    .join('');
+  updateHeader();
+}
+$('strip').addEventListener('click', (e) => {
+  const b = (e.target as HTMLElement).closest('button');
+  if (!b) return;
+  S.selCorner = parseInt(b.dataset.i ?? '-1', 10);
+  const r = S.sheet[S.selCorner];
+  renderSheet();
+  if (r) seek(r.tBrake - 2);
+});
+
+// ---------- timing tower: track map with the kart ----------
+const mm = { cv: $<HTMLCanvasElement>('minimap'), w: 0, h: 0, k: 1, cx: 0, cy: 0 };
+function sizeMinimap(): void {
+  const r = mm.cv.getBoundingClientRect();
+  const d = Math.min(window.devicePixelRatio || 1, 2);
+  if (r.width < 10) return;
+  mm.cv.width = Math.round(r.width * d);
+  mm.cv.height = Math.round(r.height * d);
+  mm.w = r.width;
+  mm.h = r.height;
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (let i = 0; i < track.N; i++) {
+    x0 = Math.min(x0, track.x[i]); x1 = Math.max(x1, track.x[i]); y0 = Math.min(y0, track.y[i]); y1 = Math.max(y1, track.y[i]);
+  }
+  mm.k = Math.min((mm.w - 24) / (x1 - x0), (mm.h - 16) / (y1 - y0));
+  mm.cx = (x0 + x1) / 2;
+  mm.cy = (y0 + y1) / 2;
+}
+function drawMinimap(): void {
+  if (!mm.w) sizeMinimap();
+  if (!mm.w) return;
+  const ctx = mm.cv.getContext('2d')!;
+  const d = mm.cv.width / mm.w;
+  ctx.setTransform(d, 0, 0, d, 0, 0);
+  ctx.clearRect(0, 0, mm.w, mm.h);
+  const X = (x: number) => mm.w / 2 + (x - mm.cx) * mm.k;
+  const Y = (y: number) => mm.h / 2 - (y - mm.cy) * mm.k;
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+  for (let i = 0; i <= track.N; i++) {
+    const j = i % track.N;
+    if (i) ctx.lineTo(X(track.x[j]), Y(track.y[j]));
+    else ctx.moveTo(X(track.x[j]), Y(track.y[j]));
+  }
+  ctx.strokeStyle = '#3a3a3e';
+  ctx.lineWidth = Math.max(3, track.width * mm.k);
+  ctx.stroke();
+  // start line and the selected corner
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(X(track.x[0]) - 2, Y(track.y[0]) - 2, 4, 4);
+  const sel = S.sheet[S.selCorner];
+  if (sel) {
+    const i = track.corners[S.selCorner]?.iMid ?? 0;
+    ctx.strokeStyle = '#f1a33b';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(X(track.x[i]), Y(track.y[i]), 8, 0, 6.283);
+    ctx.stroke();
+  }
+  if (S.pose) {
+    ctx.fillStyle = '#f1a33b';
+    ctx.beginPath();
+    ctx.arc(X(S.pose.x), Y(S.pose.y), 4.5, 0, 6.283);
+    ctx.fill();
+  }
+}
+new ResizeObserver(() => sizeMinimap()).observe(mm.cv);
 
 // ---------- boot ----------
 window.addEventListener('resize', () => {
   drawEvoNow();
   drawTelNow(-1);
 });
+showView(location.hash.slice(1) || 'piste');
 updateHeader();
 updateMeta();
 setCam('heli');
