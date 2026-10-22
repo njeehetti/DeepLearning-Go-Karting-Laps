@@ -261,9 +261,15 @@ export function cornerReport(track: Track, tel: Telemetry): CornerStats[] {
   });
 }
 
-/** v2 lateral limits: wheels stay on asphalt (|d| ≤ half − 0.65), with 0.3 m more on the bridge (parapet). */
-export function lineLimits(track: Track): Float64Array {
+/**
+ * v2 lateral limits on the kart centre: wheels on asphalt (|d| ≤ half − 0.65), or on the kerb where
+ * there is one (kerb widths from TrackQuery.kerb), with 0.3 m more on the bridge (parapet).
+ */
+export function lineLimits(track: Track, kerb?: Float64Array): Float64Array {
   const out = new Float64Array(track.N);
-  for (let i = 0; i < track.N; i++) out[i] = track.half - 0.65 - (track.z[i] > 0.1 ? 0.3 : 0);
+  for (let i = 0; i < track.N; i++) {
+    const k = kerb ? kerb[i] : 0;
+    out[i] = k > 0 ? track.half + k - 0.65 : track.half - 0.65 - (track.z[i] > 0.1 ? 0.3 : 0);
+  }
   return out;
 }

@@ -136,6 +136,16 @@ export interface Qss2 {
   aBrake: number;
 }
 
+/**
+ * Upper bound used as the theoretical lap and for calibration: full tyre grip laterally, and braking
+ * that adds front scrub to the rear brakes (a trained driver reaches ≈ 0.6 µg). The steady-state
+ * envelope (measureEnvelope) underestimates what a driver extracts in transients.
+ */
+export function makeQss2Ideal(p: ChassisParams): Qss2 {
+  const n = Math.ceil(p.pt.vTop / 0.5) + 4;
+  return { p, env: { dv: 0.5, ay: new Float64Array(n).fill(p.mu * G) }, aBrake: 0.6 * p.mu * G };
+}
+
 export function makeQss2(p: ChassisParams, env = measureEnvelope(p)): Qss2 {
   const L = p.a + p.b;
   const rear = p.a / L;

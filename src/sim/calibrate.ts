@@ -8,7 +8,8 @@ import { chassisParams, type ChassisParams } from './kart';
 import { kartParams, type KartId } from './karts';
 import { LineGA } from './lineGA';
 import { LineEvaluator, lineLimits } from './qss';
-import { makeQss2, solveQss2 } from './qss2';
+import { makeQss2Ideal, solveQss2 } from './qss2';
+import { TrackQuery } from '../track/query';
 
 export type CalibrationMode =
   /** keep µ, fit engine power */
@@ -53,8 +54,8 @@ export function paramsOf(c: Pick<Calibration, 'kartId' | 'mu' | 'powerScale' | '
 
 /** Optimises a racing line for params p; returns the genes and the theoretical lap. */
 export function theoreticalLap(track: Track, p: ChassisParams, gens = 400, seedGenes?: Float64Array | null): { genes: Float64Array; T: number } {
-  const ev = new LineEvaluator(track, 16, lineLimits(track));
-  const m = makeQss2(p);
+  const ev = new LineEvaluator(track, 16, lineLimits(track, new TrackQuery(track).kerb));
+  const m = makeQss2Ideal(p);
   const ga = new LineGA(ev, kartParams(p.kartId), {
     popSize: 60,
     seed: 3,
@@ -85,10 +86,10 @@ export function calibrate(track: Track, inp: CalibrationInput): Calibration {
     mu: mode === 'power' ? base.mu : base.mu * (mode === 'balanced' ? Math.sqrt(x) : x),
     powerScale: mode === 'grip' ? base.powerScale : base.powerScale * (mode === 'balanced' ? Math.sqrt(x) : x),
   });
-  const ev = new LineEvaluator(track, 16, lineLimits(track));
+  const ev = new LineEvaluator(track, 16, lineLimits(track, new TrackQuery(track).kerb));
   const lapOn = (genes: Float64Array, x: number) => {
     ev.lineFromGenes(genes);
-    return solveQss2(ev, makeQss2(paramsOf(at(x))));
+    return solveQss2(ev, makeQss2Ideal(paramsOf(at(x))));
   };
   const xMax = mode === 'grip' ? 3 : 4;
   let x = mode === 'grip' ? 1.5 : 2;
