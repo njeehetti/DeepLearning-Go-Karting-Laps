@@ -8,7 +8,7 @@ import type { Calibration, CalibrationMode } from '../sim/calibrate';
 import { DEFAULT_CALIBRATION, LAP_EVIDENCE } from '../sim/defaults';
 import { ENGINES, wheelPower } from '../sim/engine';
 import { KARTS, type KartId } from '../sim/karts';
-import { World, type WorldSpec } from '../ai/evalCore';
+import { LIVE_STRIDE, World, type WorldSpec } from '../ai/evalCore';
 import { DRIVER_SHAPE, paramCount } from '../ai/mlp';
 import { N_OBS } from '../ai/obs';
 import { WorkerPool, type WorkerLike } from '../ai/pool';
@@ -330,7 +330,7 @@ function startLive(g: LiveGen): void {
 /** A generation is shown until every driver has finished (or crashed), plus a short pause. */
 function liveDone(): boolean {
   let n = 0;
-  for (const tr of S.live.traj) if (tr) n = Math.max(n, tr.length / 3);
+  for (const tr of S.live.traj) if (tr) n = Math.max(n, tr.length / LIVE_STRIDE);
   return n === 0 || S.live.el * 10 >= n + 15;
 }
 
@@ -611,12 +611,12 @@ function hud(p: Pose | null, label: string): void {
     : `${nxt!.brakeDist > 0 ? `Freiner ${Math.round(nxt!.brakeDist)} m avant la corde · ` : 'À fond · '}corde ${kmh(nxt!.vApex)} km/h dans ${Math.round(nd)} m`;
 }
 
-function liveHud(leader: number, v: number, el: number): void {
+function liveHud(leader: number, v: number, el: number, thr: number, brk: number): void {
   const L = S.live;
   const n = L.traj.filter(Boolean).length;
   $('h-spd').textContent = leader >= 0 ? String(kmh(v)) : '–';
-  $('h-thr').style.height = '0%';
-  $('h-brk').style.height = '0%';
+  $('h-thr').style.height = `${Math.round((leader >= 0 ? thr : 0) * 100)}%`;
+  $('h-brk').style.height = `${Math.round((leader >= 0 ? brk : 0) * 100)}%`;
   const training = S.trainer && S.trainer.es.gen - 1 > L.gen ? ` · entraînement : génération ${S.trainer.es.gen}` : '';
   $('h-lap').textContent = `Génération ${L.gen} · ${n} pilotes · ${fmtLap(el).slice(0, -2)}${training}`;
   $('h-corner').textContent = leader >= 0 ? `En tête : pilote n°${leader + 1}${leader === L.best ? ' (meilleur tour de la génération)' : ''}` : '–';
@@ -649,15 +649,17 @@ function tick(now: number): void {
     const el = S.live.el;
     let leader = -1;
     let leaderV = 0;
+    let leaderThr = 0;
+    let leaderBrk = 0;
     const poses = S.live.traj.map((tr, i) => {
       if (!tr || tr.length < 3) return { x: 0, y: 0, z: -50, psi: 0 };
-      const n = tr.length / 3;
+      const n = tr.length / LIVE_STRIDE;
       const f = Math.max(0, Math.min(n - 1, el * 10));
       const k = Math.floor(f);
       const u = f - k;
       const k2 = Math.min(n - 1, k + 1);
-      const x = tr[k * 3] + (tr[k2 * 3] - tr[k * 3]) * u;
-      const y = tr[k * 3 + 1] + (tr[k2 * 3 + 1] - tr[k * 3 + 1]) * u;
+      const x = tr[k * LIVE_STRIDE] + (tr[k2 * LIVE_STRIDE] - tr[k * LIVE_STRIDE]) * u;
+      const y = tr[k * LIVE_STRIDE + 1] + (tr[k2 * LIVE_STRIDE + 1] - tr[k * LIVE_STRIDE + 1]) * u;
       q.project(x, y, S.live.hints[i] || 0, proj, S.live.init[i] ? 6 : 400);
       S.live.hints[i] = proj.i;
       // unwrapped distance along the track, to know who leads the race
@@ -673,16 +675,18 @@ function tick(now: number): void {
       }
       if (leader < 0 || S.live.dist[i] > S.live.dist[leader]) {
         leader = i;
-        leaderV = k2 > k ? Math.hypot(tr[k2 * 3] - tr[k * 3], tr[k2 * 3 + 1] - tr[k * 3 + 1]) * 10 : 0;
+        leaderV = k2 > k ? Math.hypot(tr[k2 * LIVE_STRIDE] - tr[k * LIVE_STRIDE], tr[k2 * LIVE_STRIDE + 1] - tr[k * LIVE_STRIDE + 1]) * 10 : 0;
+        leaderThr = tr[k * LIVE_STRIDE + 3];
+        leaderBrk = tr[k * LIVE_STRIDE + 4];
       }
-      return { x, y, z: q.at(track.z, proj.s), psi: tr[k * 3 + 2] };
+      return { x, y, z: q.at(track.z, proj.s), psi: tr[k * LIVE_STRIDE + 2] };
     });
     scene.setCrowd(poses, leader);
     scene.setHero(null);
     scene.setGhost(null);
     target = leader >= 0 ? poses[leader] : null;
     S.pose = target;
-    if (frame % 3 === 0) liveHud(leader, leaderV, el);
+    if (frame % 3 === 0) liveHud(leader, leaderV, el, leaderThr, leaderBrk);
   } else {
     scene.setCrowd([], -1);
   }

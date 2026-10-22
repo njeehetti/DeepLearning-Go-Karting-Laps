@@ -31,9 +31,12 @@ export interface CandidateResult {
   steerActivity: number;
   progress: number;
   offTime: number;
-  /** Start-line episode trajectory at 10 Hz (x, y, psi triples), only when the job asks for it. */
+  /** Start-line episode trajectory at 10 Hz (x, y, psi, throttle, brake per sample), only when the job asks for it. */
   traj?: Float32Array;
 }
+
+/** Floats per sample in a live trajectory: x, y, psi, throttle, brake. */
+export const LIVE_STRIDE = 5;
 
 export interface GenJob {
   sample: SampleSpec;
@@ -99,7 +102,7 @@ export class Evaluator {
       if (e === 0 && i < (job.recordN ?? 0)) {
         const buf: number[] = [];
         r = runEpisode(this.world.sim, this.pilot, this.x, spec, this.st, (st, _inp, decided) => {
-          if (decided && Math.round(st.t * 30) % 3 === 0) buf.push(st.x, st.y, st.psi);
+          if (decided && Math.round(st.t * 30) % 3 === 0) buf.push(st.x, st.y, st.psi, st.thr, st.brk);
         });
         traj = Float32Array.from(buf);
       } else r = this.episode(this.x, spec);
