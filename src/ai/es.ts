@@ -22,6 +22,8 @@ export interface SampleSpec {
   m: Float64Array;
   sigma: number;
   D: Float64Array;
+  /** Best-so-far brain re-entered as candidate 1 (elitism: a generation never does worse). */
+  elite?: Float64Array | null;
 }
 
 function hash3(a: number, b: number, c: number): number {
@@ -44,10 +46,14 @@ export function gaussVec(seed: number, gen: number, i: number, out: Float64Array
   return out;
 }
 
-/** x_i = m + σ·D·z_i. Index 0 of every generation is the mean itself (elitist probe of m). */
+/** x_i = m + σ·D·z_i. Candidate 0 is the mean itself, candidate 1 the elite when there is one. */
 export function sampleCandidate(s: SampleSpec, i: number, out: Float64Array, z: Float64Array = new Float64Array(out.length)): Float64Array {
   if (i === 0) {
     out.set(s.m);
+    return out;
+  }
+  if (i === 1 && s.elite) {
+    out.set(s.elite);
     return out;
   }
   gaussVec(s.seed, s.gen, i, z);
@@ -72,6 +78,7 @@ export class SepCmaEs implements PolicyTrainer {
   readonly m: Float64Array;
   readonly C: Float64Array;
   readonly D: Float64Array;
+  elite: Float64Array | null = null;
   private readonly pc: Float64Array;
   private readonly ps: Float64Array;
   private readonly w: Float64Array;
@@ -117,7 +124,7 @@ export class SepCmaEs implements PolicyTrainer {
   }
 
   spec(): SampleSpec {
-    return { seed: this.seed, gen: this.gen, m: this.m, sigma: this.sigma, D: this.D };
+    return { seed: this.seed, gen: this.gen, m: this.m, sigma: this.sigma, D: this.D, elite: this.elite };
   }
 
   candidate(i: number, out: Float64Array): Float64Array {
@@ -139,7 +146,10 @@ export class SepCmaEs implements PolicyTrainer {
     for (let r = 0; r < this.mu; r++) {
       const i = idx[r];
       if (i === 0) z.fill(0);
-      else gaussVec(this.seed, this.gen, i, z);
+      else if (i === 1 && this.elite) {
+        // injected solution: its step expressed in the sampling frame, clipped like a normal draw
+        for (let k = 0; k < n; k++) z[k] = Math.max(-4, Math.min(4, (this.elite[k] - this.m[k]) / (this.sigma * this.D[k])));
+      } else gaussVec(this.seed, this.gen, i, z);
       const wr = this.w[r];
       for (let k = 0; k < n; k++) {
         const y = this.D[k] * z[k];

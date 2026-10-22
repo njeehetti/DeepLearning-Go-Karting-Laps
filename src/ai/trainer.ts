@@ -31,6 +31,8 @@ export interface GenStats {
   cleanRate: number;
   /** Fastest clean lap from the start line among this generation's candidates (s), NaN if none. */
   bestLap: number;
+  /** Steering activity of that driver (|Δ command| per second). */
+  bestSteer: number;
   sigma: number;
   timeWeight: number;
   wallMs: number;
@@ -93,12 +95,14 @@ export class Trainer {
     let cleanEp = 0;
     let bestLap = NaN;
     let bestI = -1;
+    let bestSteer = NaN;
     res.forEach((r, i) => {
       completedEp += r.completed;
       cleanEp += r.clean;
-      if (r.clean === episodes.length && Number.isFinite(r.lap) && !(r.lap >= bestLap)) {
+      if (r.lapClean && Number.isFinite(r.lap) && !(r.lap >= bestLap)) {
         bestLap = r.lap;
         bestI = i;
+        bestSteer = r.steerActivity;
       }
     });
     const nEp = res.length * episodes.length;
@@ -109,6 +113,7 @@ export class Trainer {
       completion: completedEp / nEp,
       cleanRate: cleanEp / nEp,
       bestLap,
+      bestSteer,
       sigma: es.sigma,
       timeWeight: this.timeWeight,
       wallMs: 0,
@@ -119,6 +124,10 @@ export class Trainer {
       this.perGen.push({ gen: es.gen, lap: bestLap, params });
       if (!this.best || bestLap < this.best.lap) this.best = { params, lap: bestLap, gen: es.gen };
     }
+    // elitism: the best brain so far drives again next generation, so the generation best never regresses
+    if (this.best) es.elite = this.best.params;
+    // the elite (candidate 1) is only re-evaluated, it must not bias the step-size / covariance update
+    if (sample.elite) fit[1] = -Infinity;
     es.tell(fit);
     // curriculum: lap time only counts once a fifth of the episodes finish
     this.timeWeight = stats.completion >= 0.2 ? 1 : 0;

@@ -26,6 +26,9 @@ export interface CandidateResult {
   clean: number;
   /** Lap time of the episode from the start line (index 0), NaN if not completed. */
   lap: number;
+  /** The start-line lap was completed without any wheel on the grass. */
+  lapClean: boolean;
+  steerActivity: number;
   progress: number;
   offTime: number;
   /** Start-line episode trajectory at 10 Hz (x, y, psi triples), only when the job asks for it. */
@@ -88,6 +91,8 @@ export class Evaluator {
     let progress = 0;
     let offTime = 0;
     let lap = NaN;
+    let lapClean = false;
+    let steerActivity = 0;
     let traj: Float32Array | undefined;
     job.episodes.forEach((spec, e) => {
       let r: EpisodeResult;
@@ -104,9 +109,13 @@ export class Evaluator {
       if (r.completed) completed++;
       if (r.clean) clean++;
       if (e === 0 && r.completed) lap = r.lapTime;
+      if (e === 0) {
+        lapClean = r.clean;
+        steerActivity = r.steerActivity;
+      }
     });
     const n = job.episodes.length;
-    return { fitness: fitness / n, completed, clean, lap, progress: progress / n, offTime, traj };
+    return { fitness: fitness / n, completed, clean, lap, lapClean, steerActivity, progress: progress / n, offTime, traj };
   }
 }
 

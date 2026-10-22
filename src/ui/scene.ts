@@ -128,7 +128,7 @@ export class Scene3D {
     this.ghost = makeKart(true, 0);
     this.ghost.root.visible = false;
     scene.add(this.ghost.root);
-    this.crowd = new THREE.InstancedMesh(new THREE.BoxGeometry(1.6, 0.35, 1.05), new THREE.MeshBasicMaterial({ color: 0xc9d6df, transparent: true, opacity: 0.28, depthWrite: false }), 128);
+    this.crowd = new THREE.InstancedMesh(new THREE.BoxGeometry(1.6, 0.35, 1.05), new THREE.MeshBasicMaterial({ color: 0x9aa4ab, transparent: true, opacity: 0.38, depthWrite: false }), 128);
     this.crowd.count = 0;
     this.crowd.frustumCulled = false;
     scene.add(this.crowd);

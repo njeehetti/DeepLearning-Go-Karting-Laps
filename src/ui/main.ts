@@ -53,7 +53,8 @@ const LS = {
     }
   },
 };
-const brainKey = (k: KartId) => `brain:${DEF.id}:${k}:${SCALE}`;
+// v2: 18-input network (wheel angle added); older brains are ignored
+const brainKey = (k: KartId) => `brain2:${DEF.id}:${k}:${SCALE}`;
 const calibKey = (k: KartId) => `calib:${DEF.id}:${k}`;
 
 // ---------- state ----------
@@ -77,7 +78,21 @@ const S = {
   mode: 'live' as 'live' | 'replay',
   cam: 'heli' as CamMode,
   play: { t: 0, playing: true, rate: 1 },
-  live: { traj: [] as (Float32Array | undefined)[], best: -1, t0: 0, hints: new Int32Array(128) },
+  live: {
+    traj: [] as (Float32Array | undefined)[],
+    best: -1,
+    gen: -1,
+    lap: NaN,
+    prevLap: NaN,
+    /** Playback time of the generation being shown (s). */
+    el: 0,
+    hints: new Int32Array(128),
+    dist: new Float64Array(128),
+    lastS: new Float64Array(128),
+    init: new Uint8Array(128),
+    /** Latest generation received while the current one is still racing. */
+    pending: null as LiveGen | null,
+  },
   hoverDist: -1,
   selCorner: -1,
 };
@@ -269,16 +284,36 @@ async function loop(): Promise<void> {
   }
 }
 
+interface LiveGen {
+  traj: (Float32Array | undefined)[];
+  best: number;
+  gen: number;
+  lap: number;
+  prevLap: number;
+}
+function startLive(g: LiveGen): void {
+  Object.assign(S.live, { traj: g.traj, best: g.best, gen: g.gen, lap: g.lap, prevLap: g.prevLap, el: 0, pending: null });
+  S.live.hints.fill(0);
+  S.live.dist.fill(0);
+  S.live.init.fill(0);
+}
+/** A generation is shown until every driver has finished (or crashed), plus a short pause. */
+function liveDone(): boolean {
+  let n = 0;
+  for (const tr of S.live.traj) if (tr) n = Math.max(n, tr.length / 3);
+  return n === 0 || S.live.el * 10 >= n + 15;
+}
+
 function onGen(tr: Trainer, s: GenStats): void {
   $('s-gen').textContent = fr(s.gen + 1);
   $('s-comp').textContent = `${Math.round(s.completion * 100)} %`;
   $('s-clean').textContent = `${Math.round(s.cleanRate * 100)} %`;
   $('s-time').textContent = `${fr(S.computeMs / 1000)} s`;
   if (tr.lastTraj.some(Boolean)) {
-    S.live.traj = tr.lastTraj;
-    S.live.best = tr.lastBestIndex;
-    S.live.t0 = performance.now();
-    S.live.hints.fill(0);
+    const h = tr.history;
+    const g: LiveGen = { traj: tr.lastTraj, best: tr.lastBestIndex, gen: s.gen, lap: s.bestLap, prevLap: h.length > 1 ? h[h.length - 2].bestLap : NaN };
+    if (!S.live.traj.some(Boolean) || liveDone()) startLive(g);
+    else S.live.pending = g;
   }
   drawEvoNow();
 }
@@ -499,6 +534,7 @@ function hud(p: Pose | null, label: string): void {
   $('h-thr').style.height = `${Math.round(p.thr * 100)}%`;
   $('h-brk').style.height = `${Math.round(p.brk * 100)}%`;
   $('h-glat').textContent = `${fr(Math.abs(p.ay) / G, 2)} g`;
+  $('h-glat-l').textContent = 'latéral';
   $('h-lap').textContent = label;
   const R = 40;
   gctx.clearRect(0, 0, 92, 92);
@@ -534,6 +570,25 @@ function hud(p: Pose | null, label: string): void {
     : `${nxt!.brakeDist > 0 ? `Freiner ${Math.round(nxt!.brakeDist)} m avant la corde · ` : 'À fond · '}corde ${kmh(nxt!.vApex)} km/h dans ${Math.round(nd)} m`;
 }
 
+function liveHud(leader: number, v: number, el: number): void {
+  const L = S.live;
+  const n = L.traj.filter(Boolean).length;
+  $('h-spd').textContent = leader >= 0 ? String(kmh(v)) : '–';
+  $('h-thr').style.height = '0%';
+  $('h-brk').style.height = '0%';
+  const training = S.trainer && S.trainer.es.gen - 1 > L.gen ? ` · entraînement : génération ${S.trainer.es.gen}` : '';
+  $('h-lap').textContent = `Génération ${L.gen} · ${n} pilotes · ${fmtLap(el).slice(0, -2)}${training}`;
+  $('h-corner').textContent = leader >= 0 ? `En tête : pilote n°${leader + 1}${leader === L.best ? ' (meilleur tour de la génération)' : ''}` : '–';
+  let delta = '';
+  if (Number.isFinite(L.lap) && Number.isFinite(L.prevLap)) {
+    const d = L.lap - L.prevLap;
+    delta = d < -0.0005 ? ` · −${fr(-d, 3)} s vs génération ${L.gen - 1}` : ` · égal à la génération ${L.gen - 1}`;
+  }
+  $('h-advice').textContent = Number.isFinite(L.lap) ? `Meilleur tour de cette génération : ${fmtLap(L.lap)}${delta}` : 'Aucun tour propre dans cette génération pour l’instant';
+  $('h-glat').textContent = `${Math.round(Math.max(0, Math.min(1, L.dist[leader] / track.L)) * 100)} %`;
+  $('h-glat-l').textContent = 'du tour';
+}
+
 // ---------- main loop ----------
 const proj = new Proj();
 let last = performance.now();
@@ -548,7 +603,11 @@ function tick(now: number): void {
   let ahead: { x: number; y: number; z: number } | null = null;
   const live = S.mode === 'live' && S.live.traj.some(Boolean);
   if (live) {
-    const el = ((now - S.live.t0) / 1000) * S.play.rate;
+    if (liveDone() && S.live.pending) startLive(S.live.pending);
+    if (S.play.playing) S.live.el += dt * S.play.rate;
+    const el = S.live.el;
+    let leader = -1;
+    let leaderV = 0;
     const poses = S.live.traj.map((tr, i) => {
       if (!tr || tr.length < 3) return { x: 0, y: 0, z: -50, psi: 0 };
       const n = tr.length / 3;
@@ -558,16 +617,30 @@ function tick(now: number): void {
       const k2 = Math.min(n - 1, k + 1);
       const x = tr[k * 3] + (tr[k2 * 3] - tr[k * 3]) * u;
       const y = tr[k * 3 + 1] + (tr[k2 * 3 + 1] - tr[k * 3 + 1]) * u;
-      q.project(x, y, S.live.hints[i] || 0, proj, S.live.hints[i] ? 6 : 400);
+      q.project(x, y, S.live.hints[i] || 0, proj, S.live.init[i] ? 6 : 400);
       S.live.hints[i] = proj.i;
+      // unwrapped distance along the track, to know who leads the race
+      if (!S.live.init[i]) {
+        S.live.init[i] = 1;
+        S.live.lastS[i] = proj.s;
+      } else {
+        let ds = proj.s - S.live.lastS[i];
+        if (ds < -track.L / 2) ds += track.L;
+        else if (ds > track.L / 2) ds -= track.L;
+        S.live.dist[i] += ds;
+        S.live.lastS[i] = proj.s;
+      }
+      if (leader < 0 || S.live.dist[i] > S.live.dist[leader]) {
+        leader = i;
+        leaderV = k2 > k ? Math.hypot(tr[k2 * 3] - tr[k * 3], tr[k2 * 3 + 1] - tr[k * 3 + 1]) * 10 : 0;
+      }
       return { x, y, z: q.at(track.z, proj.s), psi: tr[k * 3 + 2] };
     });
-    scene.setCrowd(poses, S.live.best);
+    scene.setCrowd(poses, leader);
     scene.setHero(null);
     scene.setGhost(null);
-    const bi = S.live.best >= 0 ? S.live.best : 0;
-    target = poses[bi] ?? null;
-    if (frame % 3 === 0) hud(null, `Génération ${S.trainer?.es.gen ?? 0} · ${S.live.traj.filter(Boolean).length} pilotes`);
+    target = leader >= 0 ? poses[leader] : null;
+    if (frame % 3 === 0) liveHud(leader, leaderV, el);
   } else {
     scene.setCrowd([], -1);
   }

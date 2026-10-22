@@ -2,11 +2,11 @@
 // strategies (and later PPO) can treat the policy as a vector. Allocation-free forward pass.
 
 export interface MlpShape {
-  /** Layer sizes, input first, e.g. [17, 16, 3]. */
+  /** Layer sizes, input first, e.g. [18, 16, 3]. */
   sizes: number[];
 }
 
-export const DRIVER_SHAPE: MlpShape = { sizes: [17, 16, 3] };
+export const DRIVER_SHAPE: MlpShape = { sizes: [18, 16, 3] };
 
 export function paramCount(shape: MlpShape): number {
   let n = 0;

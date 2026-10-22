@@ -5,19 +5,19 @@ import type { TrackQuery } from '../track/query';
 export const RAY_ANGLES = Float64Array.from({ length: 9 }, (_, k) => ((k - 4) / 4) * (Math.PI / 2));
 export const RAY_RANGE = 40;
 export const LOOKAHEAD = [10, 25, 50] as const;
-export const N_OBS = RAY_ANGLES.length + 5 + LOOKAHEAD.length;
+export const N_OBS = RAY_ANGLES.length + 6 + LOOKAHEAD.length;
 
 /** Labels, in input order (for the network view). */
 export const OBS_LABELS = [
   ...Array.from(RAY_ANGLES, (a) => `Rayon ${Math.round((a * 180) / Math.PI)}°`),
-  'Vitesse', 'Dérive', 'Lacet', 'Écart latéral', 'Erreur de cap',
+  'Vitesse', 'Dérive', 'Lacet', 'Écart latéral', 'Erreur de cap', 'Braquage',
   ...LOOKAHEAD.map((d) => `Courbure à ${d} m`),
 ];
 
 const clamp = (x: number, a: number) => (x > a ? a : x < -a ? -a : x);
 
 /** Fills `out` (length N_OBS) and the raw ray distances `rays` (m). */
-export function observe(q: TrackQuery, st: KartState, out: Float64Array, rays?: Float64Array): void {
+export function observe(q: TrackQuery, st: KartState, out: Float64Array, rays?: Float64Array, deltaMax = 0.4): void {
   const t = q.track;
   const c = Math.cos(st.psi);
   const s = Math.sin(st.psi);
@@ -37,5 +37,7 @@ export function observe(q: TrackQuery, st: KartState, out: Float64Array, rays?: 
   let he = st.psi - Math.atan2(t.ty[st.idx], t.tx[st.idx]);
   he -= Math.round(he / (2 * Math.PI)) * 2 * Math.PI;
   out[k++] = clamp(he / 0.5, 3);
+  // current front wheel angle: without it the policy cannot know where its wheels are and saws the wheel
+  out[k++] = st.delta / deltaMax;
   for (const ahead of LOOKAHEAD) out[k++] = clamp(q.curvature(st.s + ahead) * 8, 2);
 }

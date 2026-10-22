@@ -54,7 +54,7 @@ while ((performance.now() - t0) / 60000 < minutes) {
     console.log(
       `g${String(s.gen).padStart(4)} t=${el.toFixed(0).padStart(4)}s  best ${s.best.toFixed(0).padStart(5)}  moy ${s.mean.toFixed(0).padStart(5)}  ` +
         `tours ${(s.completion * 100).toFixed(0).padStart(3)}%  propres ${(s.cleanRate * 100).toFixed(0).padStart(3)}%  ` +
-        `tour ${fmt(s.bestLap)}  record ${fmt(trainer.best?.lap ?? NaN)}  σ ${s.sigma.toFixed(3)}  ${s.wallMs.toFixed(0)} ms`,
+        `tour ${fmt(s.bestLap)}  volant ${Number.isFinite(s.bestSteer) ? s.bestSteer.toFixed(1) : "–"}/s  record ${fmt(trainer.best?.lap ?? NaN)}  σ ${s.sigma.toFixed(3)}  ${s.wallMs.toFixed(0)} ms`,
     );
   }
 }

@@ -6,6 +6,8 @@ import { Mlp, controlsFromOutput } from './mlp';
 import { N_OBS, observe } from './obs';
 
 export const DECISION_EVERY = 4; // 120 Hz / 4 = 30 Hz
+/** Hands-and-wheel inertia: first-order filter on the steering command, τ = 0.1 s at 30 Hz. */
+const STEER_ALPHA = 1 - Math.exp(-1 / 30 / 0.1);
 
 export interface EpisodeSpec {
   /** Start position along the track (m), lateral offset and rolling speed (m/s). */
@@ -30,12 +32,16 @@ export interface EpisodeResult {
   lapTime: number;
   /** Wheel-seconds on the grass. */
   offTime: number;
+  /** Mean |change of steering command| per second (smooth driving ≈ 0.5, sawing > 10). */
+  steerActivity: number;
   end: EndReason;
 }
 
 /** Reference time used to turn lap times into fitness (any value above a realistic lap). */
 const T_REF = 150;
 const LAP_BONUS = 300;
+/** Fitness cost per unit of steering command change: sawing the wheel is slow and unrealistic. */
+const STEER_COST = 1;
 
 export interface StepHook {
   (st: KartState, inp: KartInput, decided: boolean): void;
@@ -46,10 +52,17 @@ export class Pilot {
   readonly obs = new Float64Array(N_OBS);
   readonly rays = new Float64Array(9);
   readonly inp: KartInput = { steer: 0, throttle: 0, brake: 0 };
+  private steer = 0;
 
-  decide(q: TrackQuery, st: KartState, params: ArrayLike<number>): KartInput {
-    observe(q, st, this.obs, this.rays);
+  reset(): void {
+    this.steer = 0;
+  }
+
+  decide(q: TrackQuery, st: KartState, params: ArrayLike<number>, deltaMax = 0.4): KartInput {
+    observe(q, st, this.obs, this.rays, deltaMax);
     controlsFromOutput(this.mlp.forward(params, this.obs), this.inp);
+    this.steer += (this.inp.steer - this.steer) * STEER_ALPHA;
+    this.inp.steer = this.steer;
     return this.inp;
   }
 }
@@ -58,6 +71,7 @@ export function runEpisode(sim: KartSim, pilot: Pilot, params: ArrayLike<number>
   const q = sim.q;
   const L = q.L;
   sim.reset(st, spec.s0, spec.d0, spec.v0);
+  pilot.reset();
   let best = 0;
   let bestAt = 0;
   let allOff = 0;
@@ -65,10 +79,16 @@ export function runEpisode(sim: KartSim, pilot: Pilot, params: ArrayLike<number>
   let everOff = false;
   let end: EndReason = 'temps';
   let lapTime = NaN;
+  let steerSum = 0;
+  let prevSteer = 0;
   const maxSteps = Math.round(spec.maxTime / DT);
   for (let k = 0; k < maxSteps; k++) {
     const decided = k % DECISION_EVERY === 0;
-    if (decided) pilot.decide(q, st, params);
+    if (decided) {
+      pilot.decide(q, st, params, sim.p.deltaMax);
+      if (k > 0) steerSum += Math.abs(pilot.inp.steer - prevSteer);
+      prevSteer = pilot.inp.steer;
+    }
     const prevDist = st.dist;
     sim.step(st, pilot.inp);
     hook?.(st, pilot.inp, decided);
@@ -106,9 +126,9 @@ export function runEpisode(sim: KartSim, pilot: Pilot, params: ArrayLike<number>
   }
   const completed = end === 'tour';
   const progress = completed ? L : Math.max(0, Math.min(L, Math.max(best, st.dist)));
-  let fitness = progress - 3 * offTime;
+  let fitness = progress - 3 * offTime - STEER_COST * steerSum;
   if (completed) fitness += LAP_BONUS + spec.timeWeight * 10 * (T_REF - lapTime);
   else if (end === 'mur') fitness -= 20;
-  return { fitness, progress, completed, clean: completed && !everOff, lapTime, offTime, end };
+  return { fitness, progress, completed, clean: completed && !everOff, lapTime, offTime, end, steerActivity: steerSum / Math.max(st.t, 1e-3) };
 }
 
