@@ -4,9 +4,158 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Kart Lap Lab</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Saira+Condensed:wght@500;600;700&display=swap" />
   </head>
   <body>
-    <div id="app"></div>
-    <script type="module" src="/src/main.ts"></script>
+    <div class="app">
+      <aside class="rail">
+        <div class="brand">
+          <h1>Kart <span>Lap</span> Lab</h1>
+          <p>Des pilotes neuronaux apprennent le LYL</p>
+        </div>
+        <div class="grid2">
+          <section class="box" aria-labelledby="h-train">
+            <h2 id="h-train">Entraînement</h2>
+            <div class="seg" role="group" aria-label="Kart">
+              <button id="k270" aria-pressed="true"><b>270cc</b><small>Honda GX270</small></button>
+              <button id="k390" aria-pressed="false"><b>390cc</b><small>Honda GX390</small></button>
+            </div>
+            <div class="stats">
+              <div class="stat"><span>Génération</span><b id="s-gen">0</b></div>
+              <div class="stat"><span>Tours bouclés</span><b id="s-comp">–</b></div>
+              <div class="stat"><span>Tours propres</span><b id="s-clean">–</b></div>
+              <div class="stat"><span>Calcul</span><b id="s-time">0 s</b></div>
+            </div>
+            <div class="field">
+              <label for="pop">Pilotes par génération <span class="val" id="pop-v"></span></label>
+              <input type="range" id="pop" min="64" max="512" step="32" />
+            </div>
+            <div class="row">
+              <button class="btn primary" id="run">Lancer</button>
+              <button class="btn" id="reset">Repartir de zéro</button>
+            </div>
+            <p class="note" id="workers-note"></p>
+          </section>
+
+          <section class="box" aria-labelledby="h-cal">
+            <h2 id="h-cal">Kart et calage</h2>
+            <div class="meta" id="kart-meta"></div>
+            <div class="field">
+              <label for="mylap">Tour parfait visé (m:ss.sss)</label>
+              <div class="row nowrap">
+                <input type="text" id="mylap" inputmode="decimal" autocomplete="off" />
+                <select id="calmode" aria-label="Paramètre ajusté" style="width:auto">
+                  <option value="power">Puissance</option>
+                  <option value="balanced">Équilibré</option>
+                  <option value="grip">Adhérence</option>
+                </select>
+              </div>
+            </div>
+            <div class="row">
+              <button class="btn small" id="calib">Recaler</button>
+            </div>
+            <p class="note" id="calib-msg"></p>
+          </section>
+
+          <section class="box" aria-labelledby="h-brain">
+            <h2 id="h-brain">Cerveaux</h2>
+            <p class="note" id="brain-msg">Le meilleur cerveau de chaque kart est gardé dans ce navigateur.</p>
+            <div class="row">
+              <button class="btn small" id="export">Exporter (.json)</button>
+              <label class="btn small" for="import">Importer</label>
+              <input type="file" id="import" accept=".json,application/json" hidden />
+            </div>
+          </section>
+        </div>
+        <details class="box how">
+          <summary>Comment ça marche</summary>
+          <p><b>Le pilote</b> est un réseau de neurones 17-16-3 : 9 rayons vers les bords, vitesse, dérive, lacet, écart latéral, erreur de cap et courbure à 10, 25 et 50 m. Il décide 30 fois par seconde de la direction, des gaz et du frein.</p>
+          <p><b>La physique</b> tourne à 120 Hz : pneus Pacejka, essieu arrière rigide, frein arrière seul (il peut bloquer), roue intérieure qui se soulève, pente du pont, herbe et vibreurs.</p>
+          <p><b>L'apprentissage</b> est une neuroévolution (sep-CMA-ES) : chaque génération essaie des variantes du meilleur cerveau en parallèle et garde ce qui marche. D'abord finir le tour, ensuite aller vite.</p>
+          <p><b>Le calage</b> : avec les données du brief (9 ch, 62 km/h), aucun pilote ne descend sous 1:43 ; or on roule en 1:32-1:36. Le kart est donc calé sur un tour parfait à 1:31.5 avec des valeurs « effectives ».</p>
+        </details>
+        <p class="note">Tracé : © contributeurs <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> (ODbL). <a href="/legacy/kart-lap-lab.html">Ouvrir la v1</a>.</p>
+      </aside>
+
+      <main class="main">
+        <div class="topbar">
+          <div class="where"><b>LYL International</b><span id="t-sub">Sungai Long · 1 514 m · sens horaire</span></div>
+          <div class="lap">
+            <span class="pill" id="status"><i></i><span>En pause</span></span>
+            <div class="sub"><span>Meilleur tour IA</span><span id="t-kart">270cc</span></div>
+            <div class="big" id="t-best">–:––.–––</div>
+            <div class="sub"><span>Théorique <b id="t-theory">…</b></span><span>Ton record <b id="t-you">1:36.270</b></span></div>
+          </div>
+        </div>
+
+        <section class="card wide" aria-label="Vue 3D">
+          <div class="card-h">
+            <div class="chips" role="group" aria-label="Mode">
+              <button class="chip" data-mode="live" aria-pressed="true">Génération en cours</button>
+              <button class="chip" data-mode="replay" aria-pressed="false">Meilleur tour</button>
+            </div>
+            <div class="chips" role="group" aria-label="Caméra">
+              <button class="chip" data-cam="onboard" aria-pressed="false">Embarquée</button>
+              <button class="chip" data-cam="chase" aria-pressed="false">Poursuite</button>
+              <button class="chip" data-cam="heli" aria-pressed="true">Hélico</button>
+              <button class="chip" data-cam="free" aria-pressed="false">Libre</button>
+            </div>
+          </div>
+          <div class="view3d" id="view3d">
+            <canvas id="c3d" aria-label="Circuit en 3D"></canvas>
+            <div class="hud-top"><span class="tag" id="h-lap">–</span><span class="tag" id="h-ghost" hidden></span></div>
+            <div class="hud" id="hud">
+              <div class="left">
+                <div class="spd"><span id="h-spd">0</span><small>km/h</small></div>
+                <div class="pedals" aria-hidden="true"><div class="pedal t"><i id="h-thr"></i></div><div class="pedal b"><i id="h-brk"></i></div></div>
+                <canvas class="gmeter" id="h-g" width="92" height="92" aria-hidden="true"></canvas>
+              </div>
+              <div class="mid"><b id="h-corner">–</b><span id="h-advice"></span></div>
+              <div class="right"><b id="h-glat">0.00 g</b><span>latéral</span></div>
+            </div>
+            <p id="no3d" class="no3d" hidden>La vue 3D a besoin de WebGL. Le reste de l'interface fonctionne.</p>
+          </div>
+          <div class="ctrl3d">
+            <button class="btn small" id="play">Pause</button>
+            <select id="rate" aria-label="Vitesse de lecture" style="width:auto"><option value="0.5">×0,5</option><option value="1" selected>×1</option><option value="2">×2</option><option value="4">×4</option></select>
+            <select id="ghost" aria-label="Fantôme" style="width:auto">
+              <option value="none">Pas de fantôme</option>
+              <option value="theory">Fantôme : tour théorique</option>
+              <option value="older">Fantôme : génération N−50</option>
+              <option value="other">Fantôme : autre kart</option>
+            </select>
+            <input type="range" id="scrub" min="0" max="1000" value="0" aria-label="Position dans le tour" />
+          </div>
+        </section>
+
+        <section class="card" aria-label="Apprentissage">
+          <div class="card-h"><h3>Apprentissage</h3><span class="readout" id="evo-read"></span></div>
+          <div class="chart"><canvas id="evo"></canvas></div>
+        </section>
+
+        <section class="card" aria-label="Réseau de neurones">
+          <div class="card-h"><h3>Cerveau du meilleur pilote</h3><span class="readout">activations en direct</span></div>
+          <div class="nn" id="nn"></div>
+        </section>
+
+        <section class="card wide" aria-label="Télémétrie">
+          <div class="card-h"><h3>Télémétrie du meilleur tour</h3><span class="readout" id="tel-read">Survole pour lire, clique pour rejouer à cet endroit</span></div>
+          <div class="chart"><canvas id="tel"></canvas></div>
+        </section>
+
+        <section class="card wide" aria-label="Fiche virages">
+          <div class="card-h"><h3>Fiche virages</h3><span class="readout" id="corner-read">Clique un virage pour le revoir en 3D</span></div>
+          <div class="tablewrap">
+            <table>
+              <thead><tr><th>Virage</th><th>Type</th><th>Freinage avant corde</th><th>Entrée</th><th>Corde</th><th>Sortie</th><th>Accél. lat.</th><th>Placement à la corde</th><th id="th-delta">Écart fantôme</th></tr></thead>
+              <tbody id="corners"></tbody>
+            </table>
+          </div>
+        </section>
+      </main>
+    </div>
+    <script type="module" src="/src/ui/main.ts"></script>
   </body>
 </html>

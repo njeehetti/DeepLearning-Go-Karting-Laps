@@ -9,9 +9,9 @@ const track = buildTrack(lyl as TrackDef, { scale: 'official' });
 
 describe('calage', () => {
   it('atteint la cible en ajustant la puissance', () => {
-    const c = calibrate(track, { kartId: 'k270', targetLap: 95, mode: 'power', mu: 1.3, vTopKmh: 80, lineGens: 120 });
+    const c = calibrate(track, { kartId: 'k270', targetLap: 90, mode: 'power', mu: 1.3, vTopKmh: 80, lineGens: 120 });
     expect(c.reachable).toBe(true);
-    expect(Math.abs(c.lap - 95)).toBeLessThan(0.5);
+    expect(Math.abs(c.lap - 90)).toBeLessThan(0.5);
     expect(c.mu).toBe(1.3);
     expect(c.powerScale).toBeGreaterThan(1);
   }, 60_000);

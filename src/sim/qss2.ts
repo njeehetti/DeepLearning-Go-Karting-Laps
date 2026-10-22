@@ -134,6 +134,8 @@ export interface Qss2 {
   env: Envelope;
   /** Rear-only braking deceleration limit on a straight (m/s²). */
   aBrake: number;
+  /** Engine-limited acceleration is not reduced by cornering (spare rear grip): upper-bound mode. */
+  freeDrive?: boolean;
 }
 
 /**
@@ -143,7 +145,7 @@ export interface Qss2 {
  */
 export function makeQss2Ideal(p: ChassisParams): Qss2 {
   const n = Math.ceil(p.pt.vTop / 0.5) + 4;
-  return { p, env: { dv: 0.5, ay: new Float64Array(n).fill(p.mu * G) }, aBrake: 0.6 * p.mu * G };
+  return { p, env: { dv: 0.5, ay: new Float64Array(n).fill(p.mu * G) }, aBrake: 0.6 * p.mu * G, freeDrive: true };
 }
 
 export function makeQss2(p: ChassisParams, env = measureEnvelope(p)): Qss2 {
@@ -183,7 +185,7 @@ export function solveQss2(ev: LineEvaluator, m: Qss2): number {
     const vv = v[a0];
     let r = (vv * vv * Math.abs(k[a0])) / envelopeAt(m.env, vv);
     if (r > 1) r = 1;
-    const acc = (driveForce(p.pt, vv, 1) / p.m) * Math.sqrt(1 - r * r) - cd * vv * vv - rr - G * t.grade[a0];
+    const acc = (driveForce(p.pt, vv, 1) / p.m) * (m.freeDrive ? 1 : Math.sqrt(1 - r * r)) - cd * vv * vv - rr - G * t.grade[a0];
     const vn2 = vv * vv + 2 * acc * ds[a0];
     const vn = vn2 > 0 ? Math.sqrt(vn2) : 0.5;
     if (vn < v[a1]) v[a1] = vn;

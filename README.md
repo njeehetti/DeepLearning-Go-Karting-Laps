@@ -2,7 +2,19 @@
 
 Des pilotes à réseau de neurones apprennent à boucler le LYL International Karting Circuit (Sungai Long, Kajang) en kart de location Sodikart 270cc ou 390cc. La v1, qui optimise une trajectoire par algorithme génétique, reste disponible dans `legacy/` et sert de « tour théorique » de référence.
 
-> Travail en cours. Le jalon actuel et la suite sont décrits plus bas.
+## Utilisation
+
+1. `npm run dev`, puis ouvrir http://localhost:5173.
+2. **Lancer** : une population de pilotes (256 par défaut) roule en parallèle dans des Web Workers. La vue « Génération en cours » montre la génération entière en karts semi-transparents, avec le meilleur en ambre.
+3. **Meilleur tour** : replay du meilleur cerveau avec les caméras embarquée, poursuite, hélico et libre, le HUD (vitesse, pédales, g-mètre, prochain virage) et un fantôme au choix (tour théorique, génération N−50, autre kart).
+4. **Télémétrie** et **fiche virages** : point de freinage, vitesses d'entrée, de corde et de sortie, placement, écart avec le fantôme. Un clic rejoue le passage concerné en 3D.
+5. **Kart et calage** : saisir un tour parfait visé, puis recaler la puissance, l'adhérence ou les deux. Les cerveaux sont gardés dans le navigateur et s'exportent en JSON.
+
+Entraînement sans interface : `npx tsx scripts/train-headless.ts --kart k270 --minutes 10`.
+
+## Calage et hypothèses
+
+Les données du brief (9 ch, 62 km/h, µ 1,15) ne permettent pas de descendre sous 1:43, alors que les chronos réels du 270cc sont de 1:32 à 1:36 (1:33.33 relevé à 57,5 km/h de moyenne, soit un tour chronométré d'environ 1 491 m). Le kart est donc calé pour que le **tour parfait** (borne idéale : adhérence pleine, freinage combiné à 0,6 µg, accélération limitée par le moteur, vibreurs utilisables) fasse 1:31.5 : µ 1,3 et environ 9,9 ch effectifs. La pointe (80 km/h) et la transmission (variateur) sont des hypothèses. Une trace GPS (RaceChrono) permettrait de les caler vraiment.
 
 ## Lancer
 
@@ -38,11 +50,11 @@ npm run test:slow    # non-régression complète : AG v1 sur 3 000 générations
 - [x] J0 : socle Vite + TS, portage v1 vérifié bit à bit, non-régression
 - [x] J1 : pipeline circuit (OSM, GPX/GeoJSON, échelle officielle, requêtes spatiales)
 - [x] J2 : physique dynamique (calage absolu en attente de données)
-- [ ] J3 : IA headless (neuroévolution)
-- [ ] J4 : interface console et carte 2D
-- [ ] J5 : 3D, mode live, replay
-- [ ] J6 : télémétrie, fiche virages, fantômes, réseau
-- [ ] J7 : finition, mobile
+- [x] J3 : IA headless (neuroévolution sep-CMA-ES, premier tour propre en quelques secondes)
+- [x] J4 : interface console (la carte 2D est remplacée par la vue hélico et la vue libre en 3D)
+- [x] J5 : 3D de nuit, mode live, replay avec 4 caméras
+- [x] J6 : télémétrie, fiche virages, fantômes, réseau
+- [ ] J7 : finition (tests E2E Playwright, mobile vérifié, entraînements plus longs)
 
 Tracé : © contributeurs OpenStreetMap (ODbL).
 

@@ -5,7 +5,7 @@ import type { TrackDef, TrackScale } from '../track/types';
 import { paramsOf, type Calibration } from '../sim/calibrate';
 import { KartSim, KartState } from '../sim/kart';
 import { LineEvaluator } from '../sim/qss';
-import { makeQss2, solveQss2 } from '../sim/qss2';
+import { makeQss2Ideal, solveQss2 } from '../sim/qss2';
 import { Pilot, runEpisode, type EpisodeResult, type EpisodeSpec } from './episode';
 import { sampleCandidate, type SampleSpec } from './es';
 import { DRIVER_SHAPE, paramCount } from './mlp';
@@ -28,17 +28,21 @@ export interface CandidateResult {
   lap: number;
   progress: number;
   offTime: number;
+  /** Start-line episode trajectory at 10 Hz (x, y, psi triples), only when the job asks for it. */
+  traj?: Float32Array;
 }
 
 export interface GenJob {
   sample: SampleSpec;
   episodes: EpisodeSpec[];
+  /** Record the start-line trajectory of candidates 0 .. recordN − 1 (live view). */
+  recordN?: number;
 }
 
 export class World {
   readonly q: TrackQuery;
   readonly sim: KartSim;
-  /** QSS v2 speed profile on the centreline, used for rolling starts. */
+  /** Theoretical (ideal) speed profile on the centreline, used for rolling starts. */
   readonly profile: Float64Array;
   readonly dim = paramCount(DRIVER_SHAPE);
 
@@ -49,13 +53,13 @@ export class World {
     this.sim = new KartSim(this.q, p);
     const ev = new LineEvaluator(track, 16);
     ev.lineFromGenes(new Float64Array(ev.M));
-    solveQss2(ev, makeQss2(p));
+    solveQss2(ev, makeQss2Ideal(p));
     this.profile = Float64Array.from(ev.v);
   }
 
   /** Rolling start: a bit below the theoretical centreline speed at s. */
   startSpeed(s: number): number {
-    return 0.85 * this.q.at(this.profile, s);
+    return 0.8 * this.q.at(this.profile, s);
   }
 }
 
@@ -84,8 +88,16 @@ export class Evaluator {
     let progress = 0;
     let offTime = 0;
     let lap = NaN;
+    let traj: Float32Array | undefined;
     job.episodes.forEach((spec, e) => {
-      const r = this.episode(this.x, spec);
+      let r: EpisodeResult;
+      if (e === 0 && i < (job.recordN ?? 0)) {
+        const buf: number[] = [];
+        r = runEpisode(this.world.sim, this.pilot, this.x, spec, this.st, (st, _inp, decided) => {
+          if (decided && Math.round(st.t * 30) % 3 === 0) buf.push(st.x, st.y, st.psi);
+        });
+        traj = Float32Array.from(buf);
+      } else r = this.episode(this.x, spec);
       fitness += r.fitness;
       progress += r.progress;
       offTime += r.offTime;
@@ -94,7 +106,7 @@ export class Evaluator {
       if (e === 0 && r.completed) lap = r.lapTime;
     });
     const n = job.episodes.length;
-    return { fitness: fitness / n, completed, clean, lap, progress: progress / n, offTime };
+    return { fitness: fitness / n, completed, clean, lap, progress: progress / n, offTime, traj };
   }
 }
 

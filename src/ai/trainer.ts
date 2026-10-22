@@ -15,6 +15,8 @@ export interface TrainConfig {
   /** Extra random common starts per generation, on top of the start line. */
   randomStarts?: number;
   maxTime?: number;
+  /** Starting brain (resume from a saved one). */
+  x0?: ArrayLike<number>;
   /** Lap length (m) and start-speed function, provided by the caller's World. */
   L: number;
   startSpeed: (s: number) => number;
@@ -46,7 +48,7 @@ export interface Brain {
 }
 
 export class Trainer {
-  readonly cfg: Required<Omit<TrainConfig, 'world' | 'L' | 'startSpeed'>> & TrainConfig;
+  readonly cfg: Required<Omit<TrainConfig, 'world' | 'L' | 'startSpeed' | 'x0'>> & TrainConfig;
   readonly es: SepCmaEs;
   readonly pool: EvalPool;
   readonly history: GenStats[] = [];
@@ -59,7 +61,7 @@ export class Trainer {
   constructor(pool: EvalPool, cfg: TrainConfig) {
     this.cfg = { lambda: 256, sigma0: 0.5, seed: 1, randomStarts: 1, maxTime: 150, ...cfg };
     this.pool = pool;
-    this.es = new SepCmaEs(paramCount(DRIVER_SHAPE), { lambda: this.cfg.lambda, sigma0: this.cfg.sigma0, seed: this.cfg.seed });
+    this.es = new SepCmaEs(paramCount(DRIVER_SHAPE), { lambda: this.cfg.lambda, sigma0: this.cfg.sigma0, seed: this.cfg.seed, x0: this.cfg.x0 });
   }
 
   /** Common starts of a generation: the start line first (its lap time is the one reported). */
@@ -73,12 +75,19 @@ export class Trainer {
     return eps;
   }
 
+  /** Candidates whose start-line trajectory is recorded for the live view (0 = none). */
+  recordN = 0;
+  /** Trajectories of the last generation (index = candidate) and their best clean index. */
+  lastTraj: (Float32Array | undefined)[] = [];
+  lastBestIndex = -1;
+
   async step(): Promise<GenStats> {
     const t0 = performance.now();
     const es = this.es;
     const sample = { ...es.spec(), m: Float64Array.from(es.m), D: Float64Array.from(es.D) };
     const episodes = this.episodes(es.gen);
-    const res: CandidateResult[] = await this.pool.run({ sample, episodes }, es.lambda);
+    const res: CandidateResult[] = await this.pool.run({ sample, episodes, recordN: this.recordN }, es.lambda);
+    this.lastTraj = res.map((r) => r.traj);
     const fit = res.map((r) => r.fitness);
     let completedEp = 0;
     let cleanEp = 0;
@@ -104,6 +113,7 @@ export class Trainer {
       timeWeight: this.timeWeight,
       wallMs: 0,
     };
+    this.lastBestIndex = bestI;
     if (bestI >= 0) {
       const params = sampleCandidate(sample, bestI, new Float64Array(es.dim));
       this.perGen.push({ gen: es.gen, lap: bestLap, params });
