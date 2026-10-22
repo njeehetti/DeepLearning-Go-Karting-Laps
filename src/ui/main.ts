@@ -76,6 +76,7 @@ const S = {
   ghostSheet: [] as CornerSheetRow[],
   theory: new Map<string, { lap: number; run: Run }>(),
   mode: 'live' as 'live' | 'replay',
+  lineMode: 'speed' as 'speed' | 'pedals',
   cam: 'heli' as CamMode,
   play: { t: 0, playing: true, rate: 1 },
   live: {
@@ -198,12 +199,7 @@ async function setBest(brain: Brain | null): Promise<void> {
   S.run = r.run;
   if (oldT) S.play.t = (S.play.t / oldT) * r.run.t[r.run.n - 1];
   S.sheet = cornerSheet(track, r.run);
-  const sp = (k: number): [number, number, number] => {
-    const v = r.run.v[k];
-    const u = Math.max(0, Math.min(1, (v - 7) / 15));
-    return [0.36 + 0.6 * u, 0.17 + 0.6 * u, 0.53 - 0.3 * u];
-  };
-  scene.setLine(r.run.x, r.run.y, r.run.z, sp, r.run.n);
+  drawLine();
   renderSheet();
   if (S.ghostMode === 'older') void refreshGhost();
 }
@@ -242,6 +238,24 @@ async function refreshGhost(): Promise<void> {
   $('h-ghost').hidden = !S.ghostLabel;
   $('h-ghost').textContent = S.ghostLabel ? 'Fantôme · ' + S.ghostLabel : '';
   renderSheet();
+}
+
+/** Racing line of the best lap in 3D, coloured by speed or by pedals (green = throttle, red = brake). */
+function drawLine(): void {
+  const run = S.run;
+  if (!run) return;
+  const col = (k: number): [number, number, number] => {
+    if (S.lineMode === 'pedals') {
+      const b = run.brk[k];
+      const t = run.thr[k];
+      if (b > 0.03) return [0.35 + 0.6 * b, 0.12, 0.14];
+      if (t > 0.03) return [0.12, 0.25 + 0.55 * t, 0.2 + 0.25 * t];
+      return [0.45, 0.5, 0.55];
+    }
+    const u = Math.max(0, Math.min(1, (run.v[k] - 7) / 15));
+    return [0.36 + 0.6 * u, 0.17 + 0.6 * u, 0.53 - 0.3 * u];
+  };
+  scene.setLine(run.x, run.y, run.z, col, run.n);
 }
 
 // ---------- training ----------
@@ -424,6 +438,13 @@ document.querySelectorAll<HTMLButtonElement>('[data-mode]').forEach((b) =>
   b.addEventListener('click', () => {
     S.mode = b.dataset.mode as 'live' | 'replay';
     document.querySelectorAll('[data-mode]').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+  }),
+);
+document.querySelectorAll<HTMLButtonElement>('[data-line]').forEach((b) =>
+  b.addEventListener('click', () => {
+    S.lineMode = b.dataset.line as 'speed' | 'pedals';
+    document.querySelectorAll('[data-line]').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+    drawLine();
   }),
 );
 document.querySelectorAll<HTMLButtonElement>('[data-cam]').forEach((b) =>

@@ -42,6 +42,8 @@ const T_REF = 150;
 const LAP_BONUS = 300;
 /** Fitness cost per unit of steering command change: sawing the wheel is slow and unrealistic. */
 const STEER_COST = 1;
+/** Same for the pedals (dithering the throttle or brake), lighter: modulating them is legitimate. */
+const PEDAL_COST = 0.3;
 
 export interface StepHook {
   (st: KartState, inp: KartInput, decided: boolean): void;
@@ -81,13 +83,21 @@ export function runEpisode(sim: KartSim, pilot: Pilot, params: ArrayLike<number>
   let lapTime = NaN;
   let steerSum = 0;
   let prevSteer = 0;
+  let pedalSum = 0;
+  let prevThr = 0;
+  let prevBrk = 0;
   const maxSteps = Math.round(spec.maxTime / DT);
   for (let k = 0; k < maxSteps; k++) {
     const decided = k % DECISION_EVERY === 0;
     if (decided) {
       pilot.decide(q, st, params, sim.p.deltaMax);
-      if (k > 0) steerSum += Math.abs(pilot.inp.steer - prevSteer);
+      if (k > 0) {
+        steerSum += Math.abs(pilot.inp.steer - prevSteer);
+        pedalSum += Math.abs(pilot.inp.throttle - prevThr) + Math.abs(pilot.inp.brake - prevBrk);
+      }
       prevSteer = pilot.inp.steer;
+      prevThr = pilot.inp.throttle;
+      prevBrk = pilot.inp.brake;
     }
     const prevDist = st.dist;
     sim.step(st, pilot.inp);
@@ -126,7 +136,7 @@ export function runEpisode(sim: KartSim, pilot: Pilot, params: ArrayLike<number>
   }
   const completed = end === 'tour';
   const progress = completed ? L : Math.max(0, Math.min(L, Math.max(best, st.dist)));
-  let fitness = progress - 3 * offTime - STEER_COST * steerSum;
+  let fitness = progress - 3 * offTime - STEER_COST * steerSum - PEDAL_COST * pedalSum;
   if (completed) fitness += LAP_BONUS + spec.timeWeight * 10 * (T_REF - lapTime);
   else if (end === 'mur') fitness -= 20;
   return { fitness, progress, completed, clean: completed && !everOff, lapTime, offTime, end, steerActivity: steerSum / Math.max(st.t, 1e-3) };

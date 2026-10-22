@@ -76,7 +76,7 @@
           <p><b>L'apprentissage</b> est une neuroévolution (sep-CMA-ES) : chaque génération essaie des variantes du meilleur cerveau en parallèle et garde ce qui marche. D'abord finir le tour, ensuite aller vite.</p>
           <p><b>Le calage</b> : avec les données du brief (9 ch, 62 km/h), aucun pilote ne descend sous 1:43 ; or on roule en 1:32-1:36. Le kart est donc calé sur un tour parfait à 1:31.5 avec des valeurs « effectives ».</p>
         </details>
-        <p class="note">Tracé : © contributeurs <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> (ODbL). <a href="/legacy/kart-lap-lab.html">Ouvrir la v1</a>.</p>
+        <p class="note">Tracé : © contributeurs <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> (ODbL). <a href="legacy/kart-lap-lab.html">Ouvrir la v1</a>.</p>
       </aside>
 
       <main class="main">
@@ -95,6 +95,10 @@
             <div class="chips" role="group" aria-label="Mode">
               <button class="chip" data-mode="live" aria-pressed="true">Génération en cours</button>
               <button class="chip" data-mode="replay" aria-pressed="false">Meilleur tour</button>
+            </div>
+            <div class="chips" role="group" aria-label="Couleur de la trajectoire">
+              <button class="chip" data-line="speed" aria-pressed="true">Ligne : vitesse</button>
+              <button class="chip" data-line="pedals" aria-pressed="false">Ligne : pédales</button>
             </div>
             <div class="chips" role="group" aria-label="Caméra">
               <button class="chip" data-cam="onboard" aria-pressed="false">Embarquée</button>
@@ -142,7 +146,7 @@
 
         <section class="card wide" aria-label="Télémétrie">
           <div class="card-h"><h3>Télémétrie du meilleur tour</h3><span class="readout" id="tel-read">Survole pour lire, clique pour rejouer à cet endroit</span></div>
-          <div class="chart"><canvas id="tel"></canvas></div>
+          <div class="chart tall"><canvas id="tel"></canvas></div>
         </section>
 
         <section class="card wide" aria-label="Fiche virages">

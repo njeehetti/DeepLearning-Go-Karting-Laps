@@ -7,10 +7,21 @@ Des pilotes à réseau de neurones apprennent à boucler le LYL International Ka
 1. `npm run dev`, puis ouvrir http://localhost:5173.
 2. **Lancer** : une population de pilotes (256 par défaut) roule en parallèle dans des Web Workers. La vue « Génération en cours » montre la génération entière en karts semi-transparents, avec le meilleur en ambre.
 3. **Meilleur tour** : replay du meilleur cerveau avec les caméras embarquée, poursuite, hélico et libre, le HUD (vitesse, pédales, g-mètre, prochain virage) et un fantôme au choix (tour théorique, génération N−50, autre kart).
-4. **Télémétrie** et **fiche virages** : point de freinage, vitesses d'entrée, de corde et de sortie, placement, écart avec le fantôme. Un clic rejoue le passage concerné en 3D.
-5. **Kart et calage** : saisir un tour parfait visé, puis recaler la puissance, l'adhérence ou les deux. Les cerveaux sont gardés dans le navigateur et s'exportent en JSON.
+4. **Pédales** : le bouton « Ligne : pédales » colore la trajectoire 3D (vert = gaz, rouge = frein, intensité = dosage), et la télémétrie trace le gaz et le frein en % le long du tour.
+5. **Télémétrie** et **fiche virages** : point de freinage, vitesses d'entrée, de corde et de sortie, placement, écart avec le fantôme. Un clic rejoue le passage concerné en 3D.
+6. **Kart et calage** : saisir un tour parfait visé, puis recaler la puissance, l'adhérence ou les deux. Les cerveaux sont gardés dans le navigateur et s'exportent en JSON.
 
 Entraînement sans interface : `npx tsx scripts/train-headless.ts --kart k270 --minutes 10`.
+
+## Mettre en ligne
+
+Le site est 100 % statique : `npm run build` produit le dossier `dist/`. Aucun serveur ni en-tête particulier n'est nécessaire, et les Web Workers fonctionnent tels quels.
+
+- **Le plus simple, sans ligne de commande :** sur https://app.netlify.com/drop, glisser-déposer le dossier `dist/`. Un compte gratuit garde le site en ligne.
+- **Vercel :** `npx vercel --prod` à la racine du projet (connexion demandée la première fois). Vercel détecte Vite tout seul.
+- **GitHub Pages :** pousser le dépôt sur GitHub, puis publier `dist/`. Les chemins relatifs (`base: './'`) font marcher le site dans un sous-dossier.
+
+Les cerveaux restent dans le navigateur de chaque visiteur. Pour en partager un, l'exporter en JSON puis l'importer.
 
 ## Calage et hypothèses
 

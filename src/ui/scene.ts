@@ -327,8 +327,8 @@ export class Scene3D {
       const dx = xs[k + 1] - xs[k];
       const dy = ys[k + 1] - ys[k];
       const l = Math.hypot(dx, dy) || 1;
-      const nx = (-dy / l) * 0.18;
-      const ny = (dx / l) * 0.18;
+      const nx = (-dy / l) * 0.3;
+      const ny = (dx / l) * 0.3;
       const a = P(xs[k] + nx, ys[k] + ny, zs[k] + 0.035);
       const b = P(xs[k] - nx, ys[k] - ny, zs[k] + 0.035);
       const c = P(xs[k + 1] + nx, ys[k + 1] + ny, zs[k + 1] + 0.035);

@@ -104,7 +104,7 @@ export interface TelGeom {
 export function drawTel(cv: HTMLCanvasElement, run: Run | null, ghost: Run | null, L: number, cursorDist: number, hoverDist: number, corners: { dist: number; name: string }[]): TelGeom | null {
   const { ctx, w, h } = prep(cv);
   if (!run || w < 20) return null;
-  const pad = { l: 40, r: 12, t: 18, b: 44 };
+  const pad = { l: 46, r: 12, t: 18, b: 108 };
   const W = w - pad.l - pad.r;
   const H = h - pad.t - pad.b;
   let vmax = 0;
@@ -143,25 +143,54 @@ export function drawTel(cv: HTMLCanvasElement, run: Run | null, ghost: Run | nul
     ctx.stroke();
     ctx.fillText(c.name.slice(1), x, 6);
   }
-  const ys = pad.t + H + 6;
-  for (let k = 0; k < run.n - 1; k++) {
-    const x0 = X(run.dist[k]);
-    const x1 = X(run.dist[k + 1]) + 0.6;
-    if (run.thr[k] > 0.02) {
-      ctx.fillStyle = `rgba(69,192,138,${0.25 + 0.75 * run.thr[k]})`;
-      ctx.fillRect(x0, ys, x1 - x0, 8);
+  // pedal panels: throttle and brake in % along the lap (where and how hard)
+  const panel = (top: number, h: number, arr: Float32Array, color: string, ghostArr: Float32Array | null, label: string) => {
+    ctx.strokeStyle = css('--line');
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(pad.l, top + h + 0.5);
+    ctx.lineTo(pad.l + W, top + h + 0.5);
+    ctx.stroke();
+    ctx.fillStyle = css('--muted');
+    ctx.font = `10px ${css('--font-data')}`;
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, pad.l - 6, top + h / 2);
+    ctx.fillText('100', pad.l - 6, top + 3);
+    ctx.beginPath();
+    ctx.moveTo(X(run.dist[0]), top + h);
+    for (let k = 0; k < run.n && run.dist[k] <= L; k++) ctx.lineTo(X(run.dist[k]), top + h - arr[k] * h);
+    ctx.lineTo(X(Math.min(L, run.dist[run.n - 1])), top + h);
+    ctx.closePath();
+    ctx.fillStyle = color;
+    ctx.globalAlpha = 0.55;
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    if (ghostArr && ghost) {
+      ctx.setLineDash([3, 3]);
+      ctx.strokeStyle = css('--ghost');
+      ctx.beginPath();
+      for (let k = 0; k < ghost.n && ghost.dist[k] <= L; k++) {
+        const px = X(ghost.dist[k]);
+        const py = top + h - ghostArr[k] * h;
+        if (k) ctx.lineTo(px, py);
+        else ctx.moveTo(px, py);
+      }
+      ctx.stroke();
+      ctx.setLineDash([]);
     }
-    if (run.brk[k] > 0.02) {
-      ctx.fillStyle = `rgba(236,79,85,${0.35 + 0.65 * run.brk[k]})`;
-      ctx.fillRect(x0, ys + 10, x1 - x0, 8);
-    }
-  }
+  };
+  const pt = pad.t + H + 10;
+  panel(pt, 36, run.thr, css('--throttle'), ghost ? ghost.thr : null, 'gaz %');
+  panel(pt + 44, 36, run.brk, css('--brake'), ghost ? ghost.brk : null, 'frein %');
   ctx.fillStyle = css('--muted');
-  ctx.font = `10px ${css('--font-data')}`;
-  ctx.textAlign = 'left';
-  ctx.fillText('gaz', pad.l + W + 2 - 30, ys + 26);
   ctx.textAlign = 'right';
-  ctx.fillText('m', pad.l + W, ys + 34);
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillText('m', pad.l + W, h - 4);
+  for (let d = 0; d <= L; d += 200) {
+    ctx.textAlign = 'center';
+    ctx.fillText(String(d), X(d), h - 4);
+  }
   const curve = (r: Run, dash: boolean, color: string, width: number) => {
     ctx.setLineDash(dash ? [4, 3] : []);
     ctx.strokeStyle = color;
@@ -184,7 +213,7 @@ export function drawTel(cv: HTMLCanvasElement, run: Run | null, ghost: Run | nul
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(X(d), pad.t);
-    ctx.lineTo(X(d), pad.t + H + 24);
+    ctx.lineTo(X(d), pad.t + H + 90);
     ctx.stroke();
   };
   vline(cursorDist, 'rgba(241,163,59,.7)');
