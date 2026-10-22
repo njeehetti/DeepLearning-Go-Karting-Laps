@@ -1,0 +1,114 @@
+// One driving episode of a neural pilot: physics at 120 Hz, decisions at 30 Hz, termination rules and
+// fitness. DOM-free, allocation-free per step.
+import { DT, KartState, type KartInput, type KartSim } from '../sim/kart';
+import type { TrackQuery } from '../track/query';
+import { Mlp, controlsFromOutput } from './mlp';
+import { N_OBS, observe } from './obs';
+
+export const DECISION_EVERY = 4; // 120 Hz / 4 = 30 Hz
+
+export interface EpisodeSpec {
+  /** Start position along the track (m), lateral offset and rolling speed (m/s). */
+  s0: number;
+  d0: number;
+  v0: number;
+  /** Hard time cap (s). */
+  maxTime: number;
+  /** Weight of the lap time in the fitness (curriculum: 0 = just finish the lap). */
+  timeWeight: number;
+}
+
+export type EndReason = 'tour' | 'mur' | 'herbe' | 'immobile' | 'contresens' | 'temps';
+
+export interface EpisodeResult {
+  fitness: number;
+  /** Distance covered along the centreline (m). */
+  progress: number;
+  completed: boolean;
+  /** Completed without any wheel on the grass. */
+  clean: boolean;
+  lapTime: number;
+  /** Wheel-seconds on the grass. */
+  offTime: number;
+  end: EndReason;
+}
+
+/** Reference time used to turn lap times into fitness (any value above a realistic lap). */
+const T_REF = 150;
+const LAP_BONUS = 300;
+
+export interface StepHook {
+  (st: KartState, inp: KartInput, decided: boolean): void;
+}
+
+export class Pilot {
+  readonly mlp = new Mlp();
+  readonly obs = new Float64Array(N_OBS);
+  readonly rays = new Float64Array(9);
+  readonly inp: KartInput = { steer: 0, throttle: 0, brake: 0 };
+
+  decide(q: TrackQuery, st: KartState, params: ArrayLike<number>): KartInput {
+    observe(q, st, this.obs, this.rays);
+    controlsFromOutput(this.mlp.forward(params, this.obs), this.inp);
+    return this.inp;
+  }
+}
+
+export function runEpisode(sim: KartSim, pilot: Pilot, params: ArrayLike<number>, spec: EpisodeSpec, st = new KartState(), hook?: StepHook): EpisodeResult {
+  const q = sim.q;
+  const L = q.L;
+  sim.reset(st, spec.s0, spec.d0, spec.v0);
+  let best = 0;
+  let bestAt = 0;
+  let allOff = 0;
+  let offTime = 0;
+  let everOff = false;
+  let end: EndReason = 'temps';
+  let lapTime = NaN;
+  const maxSteps = Math.round(spec.maxTime / DT);
+  for (let k = 0; k < maxSteps; k++) {
+    const decided = k % DECISION_EVERY === 0;
+    if (decided) pilot.decide(q, st, params);
+    const prevDist = st.dist;
+    sim.step(st, pilot.inp);
+    hook?.(st, pilot.inp, decided);
+    if (st.wheelsOff > 0) {
+      offTime += st.wheelsOff * DT;
+      everOff = true;
+    }
+    if (st.dist >= L) {
+      // interpolate the crossing of the lap line inside the last step
+      const f = (L - prevDist) / Math.max(1e-9, st.dist - prevDist);
+      lapTime = st.t - DT + f * DT;
+      end = 'tour';
+      break;
+    }
+    if (st.crashed) {
+      end = 'mur';
+      break;
+    }
+    allOff = st.wheelsOff === 4 ? allOff + DT : 0;
+    if (allOff > 0.5) {
+      end = 'herbe';
+      break;
+    }
+    if (st.dist > best + 2) {
+      best = st.dist;
+      bestAt = st.t;
+    } else if (st.t - bestAt > 3) {
+      end = 'immobile';
+      break;
+    }
+    if (st.dist < best - 10) {
+      end = 'contresens';
+      break;
+    }
+  }
+  const completed = end === 'tour';
+  const progress = completed ? L : Math.max(0, Math.min(L, Math.max(best, st.dist)));
+  let fitness = progress - 3 * offTime;
+  if (completed) fitness += LAP_BONUS + spec.timeWeight * 10 * (T_REF - lapTime);
+  else if (end === 'mur') fitness -= 20;
+  return { fitness, progress, completed, clean: completed && !everOff, lapTime, offTime, end };
+}
+
