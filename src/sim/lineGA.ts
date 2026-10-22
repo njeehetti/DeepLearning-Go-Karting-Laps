@@ -9,6 +9,8 @@ export interface LineGAOptions {
   sigma?: number;
   seed?: number;
   seedGenes?: ArrayLike<number> | null;
+  /** Lap-time function of a gene vector; defaults to the v1 solver with kp. */
+  cost?: (g: Float64Array) => number;
 }
 
 export interface LineGAStep {
@@ -36,6 +38,7 @@ export class LineGA {
   readonly history: [number, number, number][] = [];
   pop: Float64Array[] = [];
   fit: Float64Array;
+  private readonly cost: (g: Float64Array) => number;
 
   constructor(evaluator: LineEvaluator, kp: QssParams, opts: LineGAOptions = {}) {
     this.ev = evaluator;
@@ -47,6 +50,7 @@ export class LineGA {
     this.sigma0 = opts.sigma || 1.4;
     this.sigma = this.sigma0;
     this.rand = mulberry32(opts.seed || 12345);
+    this.cost = opts.cost ?? ((g) => evaluator.lapTime(g, kp));
     this.fit = new Float64Array(this.popSize);
     for (let p = 0; p < this.popSize; p++) this.pop.push(this.randomIndividual(p === 0 ? 0 : 0.85));
     if (opts.seedGenes && opts.seedGenes.length === this.M) this.pop[1] = Float64Array.from(opts.seedGenes);
@@ -84,7 +88,7 @@ export class LineGA {
   }
 
   private evaluateAll(): void {
-    for (let p = 0; p < this.popSize; p++) this.fit[p] = this.ev.lapTime(this.pop[p], this.kp);
+    for (let p = 0; p < this.popSize; p++) this.fit[p] = this.cost(this.pop[p]);
     this.evals += this.popSize;
     this.sort();
   }
@@ -154,7 +158,7 @@ export class LineGA {
     for (let p = this.elite; p < this.popSize; p++) {
       const g = this.child();
       next.push(g);
-      nf[p] = this.ev.lapTime(g, this.kp);
+      nf[p] = this.cost(g);
     }
     this.evals += this.popSize - this.elite;
     this.pop = next;

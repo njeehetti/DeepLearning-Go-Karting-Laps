@@ -37,7 +37,7 @@ npm run test:slow    # non-régression complète : AG v1 sur 3 000 générations
 
 - [x] J0 : socle Vite + TS, portage v1 vérifié bit à bit, non-régression
 - [x] J1 : pipeline circuit (OSM, GPX/GeoJSON, échelle officielle, requêtes spatiales)
-- [ ] J2 : physique dynamique
+- [x] J2 : physique dynamique (calage absolu en attente de données)
 - [ ] J3 : IA headless (neuroévolution)
 - [ ] J4 : interface console et carte 2D
 - [ ] J5 : 3D, mode live, replay

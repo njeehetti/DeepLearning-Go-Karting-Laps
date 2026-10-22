@@ -33,6 +33,10 @@ export class TrackQuery {
   readonly ly: Float64Array;
   readonly rx: Float64Array;
   readonly ry: Float64Array;
+  /** Kerb width beyond the edge at each point (0 = none). Kerbs line corners, never the bridge. */
+  readonly kerb: Float64Array;
+  /** Distance from the edge to the tyre wall (or bridge parapet) at each point. */
+  readonly wall: Float64Array;
   private readonly tmp = new Proj();
 
   constructor(track: Track) {
@@ -63,6 +67,19 @@ export class TrackQuery {
       this.ly[i] = track.y[i] + track.ny[i] * track.half;
       this.rx[i] = track.x[i] - track.nx[i] * track.half;
       this.ry[i] = track.y[i] - track.ny[i] * track.half;
+    }
+    // same layout as the v1 3D scene: kerbs 0.95 m around corners, tyres 1.7 m (straights) / 2.6 m (corners)
+    const inCorner = new Uint8Array(N);
+    for (const c of track.corners) {
+      const len = ((c.i1 - c.i0 + N) % N) + 6;
+      for (let q = -3; q < len; q++) inCorner[(c.i0 + q + N) % N] = 1;
+    }
+    this.kerb = new Float64Array(N);
+    this.wall = new Float64Array(N);
+    for (let i = 0; i < N; i++) {
+      const onBridge = track.z[i] > 0.1;
+      this.kerb[i] = inCorner[i] && !onBridge ? 0.95 : 0;
+      this.wall[i] = onBridge ? 0.15 : inCorner[i] ? 2.6 : 1.7;
     }
   }
 

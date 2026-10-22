@@ -37,8 +37,11 @@ export class LineEvaluator {
   readonly ds: Float64Array;
   readonly vlim: Float64Array;
   readonly v: Float64Array;
+  /** Optional per-point limit on |d| (v2: tighter on the bridge); v1 uses limit() everywhere. */
+  readonly lims: Float64Array | null;
 
-  constructor(track: Track, geneSpacing = 16) {
+  constructor(track: Track, geneSpacing = 16, lims: Float64Array | null = null) {
+    this.lims = lims;
     const N = track.N;
     const step = Math.max(2, Math.round(geneSpacing / 2));
     const M = Math.floor(N / step);
@@ -74,8 +77,10 @@ export class LineEvaluator {
 
   lineFromGenes(g: ArrayLike<number>): void {
     const { N, M, track: t, w } = this;
-    const lim = this.limit();
+    const lim0 = this.limit();
+    const lims = this.lims;
     for (let i = 0; i < N; i++) {
+      const lim = lims ? lims[i] : lim0;
       const j = this.j0[i];
       const b = i * 4;
       let dd = g[(j - 1 + M) % M] * w[b] + g[j % M] * w[b + 1] + g[(j + 1) % M] * w[b + 2] + g[(j + 2) % M] * w[b + 3];
@@ -254,4 +259,11 @@ export function cornerReport(track: Track, tel: Telemetry): CornerStats[] {
       sApex: tel.s[iMin], tApex: tel.time[iMin],
     };
   });
+}
+
+/** v2 lateral limits: wheels stay on asphalt (|d| ≤ half − 0.65), with 0.3 m more on the bridge (parapet). */
+export function lineLimits(track: Track): Float64Array {
+  const out = new Float64Array(track.N);
+  for (let i = 0; i < track.N; i++) out[i] = track.half - 0.65 - (track.z[i] > 0.1 ? 0.3 : 0);
+  return out;
 }
