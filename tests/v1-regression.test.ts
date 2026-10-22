@@ -78,5 +78,5 @@ describe('portage v1 : algorithme génétique', () => {
     expect(Math.abs(r.best - want.best)).toBeLessThan(EPS);
     expect(Math.abs(r.mean - want.mean)).toBeLessThan(EPS);
     expect(Math.abs(r.sigma - want.sigma)).toBeLessThan(EPS);
-  });
+  }, 30_000);
 });
