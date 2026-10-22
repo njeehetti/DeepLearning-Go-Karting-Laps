@@ -111,11 +111,16 @@ input[type=range] { accent-color: var(--accent); }
 .hud { position: absolute; inset: auto 0 0 0; display: flex; align-items: flex-end; gap: 14px; padding: 12px 16px; pointer-events: none; background: linear-gradient(to top, rgba(4, 6, 8, .85), rgba(4, 6, 8, 0)); }
 .hud-speed b { font: 600 40px/1 var(--font-data); font-variant-numeric: tabular-nums; }
 .hud-speed small { margin-left: 4px; color: var(--muted); font-size: 12px; }
-.pedals { display: flex; gap: 5px; align-items: flex-end; height: 44px; }
-.pedal { width: 10px; height: 100%; background: rgba(255, 255, 255, .1); border-radius: 2px; position: relative; overflow: hidden; }
-.pedal i { position: absolute; left: 0; right: 0; bottom: 0; height: 0; }
+.pedals { display: flex; gap: 10px; align-items: flex-end; }
+.pedal { display: flex; flex-direction: column; align-items: center; gap: 2px; width: 34px; }
+.pedal .bar { width: 18px; height: 52px; background: rgba(255, 255, 255, .16); border: 1px solid rgba(255, 255, 255, .22); border-radius: 3px; position: relative; overflow: hidden; }
+.pedal i { position: absolute; left: 0; right: 0; bottom: 0; height: 0; transition: height 60ms linear; }
 .pedal.t i { background: var(--throttle); }
 .pedal.b i { background: var(--brake); }
+.pedal b { font: 600 13px/1 var(--font-data); font-variant-numeric: tabular-nums; }
+.pedal.t b { color: var(--throttle); }
+.pedal.b b { color: var(--brake); }
+.pedal small { color: var(--muted); font-size: 10.5px; line-height: 1; }
 .gmeter { width: 46px; height: 46px; }
 .hud-mid { flex: 1; min-width: 0; text-align: center; }
 .hud-mid b { display: block; font-size: 16px; font-weight: 600; }
@@ -209,6 +214,8 @@ tbody tr.sel { outline: 1px solid var(--accent); outline-offset: -1px; }
   .hud { gap: 8px; padding: 8px 10px; }
   .hud-speed b { font-size: 28px; }
   .gmeter { display: none; }
+  .pedals { gap: 6px; }
+  .pedal .bar { height: 40px; width: 14px; }
   .hud-mid b { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .hud-mid span { display: none; }
   .hud-right b { font-size: 14px; }

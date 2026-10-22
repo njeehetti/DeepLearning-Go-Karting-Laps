@@ -564,6 +564,14 @@ function drawTelNow(cursor: number): void {
 }
 
 // ---------- HUD ----------
+function pedals(thr: number, brk: number): void {
+  const t = Math.round(Math.min(1, Math.max(0, thr)) * 100);
+  const b = Math.round(Math.min(1, Math.max(0, brk)) * 100);
+  $('h-thr').style.height = `${t}%`;
+  $('h-brk').style.height = `${b}%`;
+  $('h-thr-v').textContent = String(t);
+  $('h-brk-v').textContent = String(b);
+}
 const gctx = $<HTMLCanvasElement>('h-g').getContext('2d')!;
 function hud(p: Pose | null, label: string): void {
   if (!p) {
@@ -572,8 +580,7 @@ function hud(p: Pose | null, label: string): void {
     return;
   }
   $('h-spd').textContent = String(kmh(p.v));
-  $('h-thr').style.height = `${Math.round(p.thr * 100)}%`;
-  $('h-brk').style.height = `${Math.round(p.brk * 100)}%`;
+  pedals(p.thr, p.brk);
   $('h-glat').textContent = `${fr(Math.abs(p.ay) / G, 2)} g`;
   $('h-glat-l').textContent = 'latéral';
   $('h-lap').textContent = label;
@@ -615,8 +622,7 @@ function liveHud(leader: number, v: number, el: number, thr: number, brk: number
   const L = S.live;
   const n = L.traj.filter(Boolean).length;
   $('h-spd').textContent = leader >= 0 ? String(kmh(v)) : '–';
-  $('h-thr').style.height = `${Math.round((leader >= 0 ? thr : 0) * 100)}%`;
-  $('h-brk').style.height = `${Math.round((leader >= 0 ? brk : 0) * 100)}%`;
+  pedals(leader >= 0 ? thr : 0, leader >= 0 ? brk : 0);
   const training = S.trainer && S.trainer.es.gen - 1 > L.gen ? ` · entraînement : génération ${S.trainer.es.gen}` : '';
   $('h-lap').textContent = `Génération ${L.gen} · ${n} pilotes · ${fmtLap(el).slice(0, -2)}${training}`;
   $('h-corner').textContent = leader >= 0 ? `En tête : pilote n°${leader + 1}${leader === L.best ? ' (meilleur tour de la génération)' : ''}` : '–';
