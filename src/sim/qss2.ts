@@ -1,14 +1,14 @@
 // "Tour théorique v2": quasi-steady lap solver that shares its limits with the dynamic model, so the AI
 // is measured against what this kart can actually do:
-//  - lateral: the steady-state envelope ayMax(v) measured by simulated skidpads on the dynamic model
-//    (includes rigid-axle and power understeer);
+//  - lateral: the steady-state envelope ayMax(v) of the dynamic model, found open-loop (fixed steering)
+//    so it includes rigid-axle effects and does not depend on any driver model;
 //  - acceleration: the same engine torque curve and governor;
 //  - braking: rear brakes only, limited by longitudinal load transfer.
 import { G } from '../track/geometry';
 import { buildTrack } from '../track/build';
 import { TrackQuery } from '../track/query';
 import type { TrackDef } from '../track/types';
-import { driveForce } from './engine';
+import { driveForce, makePowertrain, scaleEngine } from './engine';
 import { KartSim, KartState, type ChassisParams } from './kart';
 import type { LineEvaluator } from './qss';
 
@@ -18,7 +18,7 @@ export interface Envelope {
   ay: Float64Array;
 }
 
-function circleDef(R: number): TrackDef {
+function circleDef(R: number, width: number): TrackDef {
   const M = (6371000 * Math.PI) / 180;
   const n = Math.round(2 * Math.PI * R);
   const coords: [number, number][] = [];
@@ -26,54 +26,97 @@ function circleDef(R: number): TrackDef {
     const a = (k / n) * 2 * Math.PI;
     coords.push([(R * Math.sin(a)) / M, (R * Math.cos(a)) / M]);
   }
-  return { id: 'skidpad', name: 'skidpad', width: 12, coords, startFrac: 0 };
+  return { id: 'skidpad', name: 'skidpad', width, coords, startFrac: 0 };
 }
 
-/** Highest steady speed held on a circle of radius R (ramped, scripted driver on the centreline). */
-function skidpad(p: ChassisParams, R: number): number {
-  const q = new TrackQuery(buildTrack(circleDef(R)));
-  const sim = new KartSim(q, p);
-  const st = sim.reset(new KartState(), 1, 0, 4);
+/** A paddock so wide the kart never leaves the asphalt during the open-loop tests. */
+let paddock: TrackQuery | null = null;
+
+/**
+ * Largest stable steady-state lateral acceleration at speed v: fixed steering angle, speed held by a
+ * PI on the throttle, no path controller. The result is deterministic and independent of any driver
+ * model. Beyond the limit the kart either spins (oversteer) or saturates its front (understeer).
+ */
+function steadyAy(p: ChassisParams, v: number): number {
+  paddock ??= new TrackQuery(buildTrack(circleDef(200, 390)));
+  const sim = new KartSim(paddock, p);
+  const st = new KartState();
   const L = p.a + p.b;
+  const tryDelta = (delta: number): number => {
+    sim.reset(st, 1, 0, v);
+    let I = 0;
+    let sum = 0;
+    let sum2 = 0;
+    let n = 0;
+    const steer = delta / p.deltaMax;
+    for (let k = 0; k < 120 * 3.5; k++) {
+      const e = v - st.vx;
+      I += e / 120;
+      const u = e + 0.5 * I;
+      sim.step(st, { steer, throttle: Math.max(0, Math.min(1, u)), brake: u < -0.5 ? Math.min(1, -u * 0.2) : 0 });
+      if (k >= 120 * 2.5) {
+        const ay = st.vx * st.r;
+        sum += ay;
+        sum2 += ay * ay;
+        n++;
+      }
+    }
+    const mean = sum / n;
+    const sd = Math.sqrt(Math.max(0, sum2 / n - mean * mean));
+    const stable = Math.abs(st.vx - v) < 0.4 && sd < 0.05 * Math.abs(mean) + 0.05 && Math.abs(Math.atan2(st.vy, st.vx)) < 0.35;
+    return stable ? mean : -1;
+  };
+  // coarse log sweep, then refine around the best
+  const lo = Math.max(0.002, (L * 0.2 * G) / (v * v));
   let best = 0;
-  for (let k = 0; k < 120 * 150; k++) {
-    const vT = 4 + st.t * 0.12;
-    // pure pursuit on the circle + speed hold
-    const ld = 3 + 0.3 * st.vx;
-    const sA = st.s + ld;
-    const tx = q.at(q.track.x, sA) - st.x;
-    const ty = q.at(q.track.y, sA) - st.y;
-    const alpha = Math.atan2(ty, tx) - st.psi;
-    const steer = Math.atan2(2 * L * Math.sin(alpha), Math.hypot(tx, ty)) / p.deltaMax;
-    const e = vT - st.vx;
-    sim.step(st, { steer, throttle: e > 0 ? Math.min(1, e + 0.2) : 0, brake: 0 });
-    if (Math.abs(st.d) > 1.5 || st.wheelsOff || st.crashed) break;
-    if (Math.abs(st.d) < 0.6) best = Math.max(best, st.vx);
-    if (st.vx < vT - 3) break; // power-limited: cannot go faster on this radius
+  let bestD = lo;
+  const nC = 40;
+  for (let k = 0; k <= nC; k++) {
+    const d = lo * Math.pow(p.deltaMax / lo, k / nC);
+    const ay = tryDelta(d);
+    if (ay > best) {
+      best = ay;
+      bestD = d;
+    }
+  }
+  const f = Math.pow(p.deltaMax / lo, 1 / nC);
+  for (let k = 1; k <= 8; k++) {
+    const d = bestD * Math.pow(f, (k - 4.5) / 4);
+    const ay = tryDelta(d);
+    if (ay > best) best = ay;
   }
   return best;
 }
 
-/** Steady-state lateral envelope of the dynamic model (≈ 0.3 s to compute). */
+/**
+ * Steady-state lateral envelope ayMax(v) of the dynamic model (≈ 0.1 s). Run with an oversized,
+ * ungoverned engine so high speeds are reachable: holding a steady speed only needs the force that
+ * beats the resistances, so cornering behaviour is unchanged; real power is handled by the solver.
+ */
 export function measureEnvelope(p: ChassisParams): Envelope {
-  const radii = [6, 8, 10, 13, 17, 22, 30, 40, 60, 90];
-  const pts: [number, number][] = radii.map((R) => {
-    const v = skidpad(p, R);
-    return [v, (v * v) / R];
-  });
-  pts.sort((a, b) => a[0] - b[0]);
+  const strong: ChassisParams = { ...p, pt: makePowertrain(scaleEngine(p.pt.spec, 4), 45, p.pt.rWheel, 'cvt') };
   const dv = 0.5;
   const n = Math.ceil(p.pt.vTop / dv) + 4;
+  const speeds = [3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 24];
+  const pts = speeds.map((v) => steadyAy(strong, v));
+  // fill dips: a driver can trade throttle for stability, so a speed band that is unstable at the
+  // regulated throttle is not a hard limit; never exceed what both neighbours prove achievable
+  const raw = pts.slice();
+  for (let i = 1; i < raw.length - 1; i++) {
+    const left = Math.max(...raw.slice(0, i));
+    const right = Math.max(...raw.slice(i + 1));
+    pts[i] = Math.max(raw[i], Math.min(left, right));
+  }
   const ay = new Float64Array(n);
   for (let k = 0; k < n; k++) {
     const v = k * dv;
-    if (v <= pts[0][0]) ay[k] = pts[0][1];
-    else if (v >= pts[pts.length - 1][0]) ay[k] = pts[pts.length - 1][1];
+    if (v <= speeds[0]) ay[k] = pts[0];
+    else if (v >= speeds[speeds.length - 1]) ay[k] = pts[pts.length - 1];
     else {
       let j = 0;
-      while (pts[j + 1][0] < v) j++;
-      const u = (v - pts[j][0]) / (pts[j + 1][0] - pts[j][0] || 1);
-      ay[k] = pts[j][1] + (pts[j + 1][1] - pts[j][1]) * u;
+      while (speeds[j + 1] < v) j++;
+      const u = (v - speeds[j]) / (speeds[j + 1] - speeds[j]);
+      ay[k] = pts[j] + (pts[j + 1] - pts[j]) * u;
     }
   }
   return { dv, ay };

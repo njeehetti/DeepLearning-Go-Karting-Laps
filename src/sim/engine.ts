@@ -44,6 +44,11 @@ export function makePowertrain(spec: EngineSpec, vTop: number, rWheel = 0.14, tr
   return { spec, transmission, rWheel, vTop, ratio: (omegaGov * rWheel) / vTop };
 }
 
+/** Same engine with torque (hence power) multiplied by k. */
+export function scaleEngine(spec: EngineSpec, k: number): EngineSpec {
+  return k === 1 ? spec : { ...spec, tPeak: spec.tPeak * k, tGov: spec.tGov * k };
+}
+
 /** Rated power at the wheel (W). */
 export function wheelPower(spec: EngineSpec): number {
   return spec.tGov * ((spec.rpmGov * 2 * Math.PI) / 60) * spec.eta;

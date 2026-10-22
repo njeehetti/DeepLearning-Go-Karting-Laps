@@ -10,7 +10,7 @@
 //  - longitudinal load transfer, slope of the bridge ramps, grass and kerbs per wheel.
 import { G } from '../track/geometry';
 import { Proj, type TrackQuery } from '../track/query';
-import { ENGINES, driveForce, makePowertrain, type Powertrain, type Transmission } from './engine';
+import { ENGINES, driveForce, makePowertrain, scaleEngine, type Powertrain, type Transmission } from './engine';
 import { KARTS, type KartId } from './karts';
 
 export const DT = 1 / 120;
@@ -66,6 +66,8 @@ export interface PhysOpts {
   /** Override top speed (km/h). */
   vTopKmh?: number;
   transmission?: Transmission;
+  /** Multiplies engine torque (calibration of an effective power). */
+  powerScale?: number;
 }
 
 export function chassisParams(kartId: KartId, opts: PhysOpts = {}): ChassisParams {
@@ -80,7 +82,7 @@ export function chassisParams(kartId: KartId, opts: PhysOpts = {}): ChassisParam
     mu, muSlide: 0.8, B: 14, C: 1.45, E: 0.3, sigma: 0.3, kSlip: 12, liftG: 1.18 / 2 / 0.28, liftSteer: 0.2,
     CdA: 0.75, rho: 1.16, Crr: 0.025, grassGrip: 0.5, grassCrr: 0.15, kerbGrip: 0.9,
     deltaMax: 0.4, steerRate: 3, pedalRate: 8,
-    brakeMax: 1.6 * mu * m * G * rearShare, pt: makePowertrain(ENGINES[kartId], vTop, 0.14, opts.transmission),
+    brakeMax: 1.6 * mu * m * G * rearShare, pt: makePowertrain(scaleEngine(ENGINES[kartId], opts.powerScale ?? 1), vTop, 0.14, opts.transmission),
   };
 }
 
