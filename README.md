@@ -39,20 +39,6 @@ npm run build      # site statique dans dist/
 npx tsx scripts/train-headless.ts --kart k270 --minutes 10   # entraînement sans interface
 ```
 
-## Mettre en ligne sur GitHub Pages
-
-Le dépôt contient le workflow `.github/workflows/pages.yml` : à chaque push sur `main` ou `master`, GitHub lance les tests, construit le site et le publie.
-
-1. Crée un dépôt vide sur GitHub (sans README).
-2. Dans ce dossier :
-   ```bash
-   git remote add origin https://github.com/<ton-compte>/<ton-depot>.git
-   git push -u origin master
-   ```
-3. Sur GitHub : **Settings → Pages → Source : GitHub Actions**.
-4. Le site est en ligne à `https://<ton-compte>.github.io/<ton-depot>/` après le premier passage du workflow (onglet **Actions**, environ 2 minutes).
-
-Tout est statique (pas de serveur, pas d'en-tête particulier) : chaque visiteur entraîne ses propres pilotes sur les cœurs de sa machine.
 
 ## Comment ça marche
 
