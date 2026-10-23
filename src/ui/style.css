@@ -241,3 +241,5 @@ tbody tr.sel { outline: 1px solid var(--accent); outline-offset: -1px; }
 .daybar input[type=range] { flex: 0 1 220px; min-width: 120px; }
 .daybar b { color: var(--text); font: 500 12px var(--font-data); min-width: 40px; }
 .daybar .note { margin: 0; color: var(--faint); font-size: 12px; }
+.guest-table { min-width: 620px; }
+.guest-table td.acts { text-align: right; white-space: nowrap; }

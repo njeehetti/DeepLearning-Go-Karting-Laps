@@ -66,7 +66,8 @@ applyTheme(THEME);
   host.appendChild(sky);
 }
 // v3: 22-input network (braking need, speed margin, acceleration, brake pedal); older brains are ignored
-const brainKey = (k: KartId, w: Weather = S.weather) => `brain3:${DEF.id}:${k}:${SCALE}${w === 'sec' ? '' : ':' + w}`;
+const brainKeyOf = (id: string, k: KartId, w: Weather) => `brain3:${id}:${k}:${SCALE}${w === 'sec' ? '' : ':' + w}`;
+const brainKey = (k: KartId, w: Weather = S.weather) => brainKeyOf(DEF.id, k, w);
 /** Theoretical laps are cached per kart and track conditions. */
 const thKey = (k: KartId, w: Weather = S.weather) => `${k}:${w}`;
 // grip and power belong to the kart, not to the circuit (the LYL key is the pre-multi-circuit one)
@@ -93,7 +94,11 @@ const S = {
   best: null as Brain | null,
   run: null as Run | null,
   sheet: [] as CornerSheetRow[],
-  ghostMode: 'none' as 'none' | 'theory' | 'older' | 'other',
+  ghostMode: 'none' as 'none' | 'theory' | 'older' | 'other' | 'guest',
+  /** Driver of another circuit raced as the witness ghost (also next to the live population). */
+  guest: null as { label: string; run: Run } | null,
+  /** Driver the next training starts from, chosen in the other circuits' table. */
+  seed: null as { label: string; brain: Brain } | null,
   ghost: null as Run | null,
   ghostLabel: '',
   ghostSheet: [] as CornerSheetRow[],
@@ -327,6 +332,9 @@ async function refreshGhost(): Promise<void> {
         S.ghostLabel = `${KARTS[other].label} : ${fmtLap(r.run.result.lapTime)}`;
       }
     } else S.ghostLabel = `Aucun cerveau ${KARTS[other].label} encore`;
+  } else if (S.ghostMode === 'guest') {
+    S.ghost = S.guest?.run ?? null;
+    S.ghostLabel = S.guest ? `Témoin ${S.guest.label} : ${outcome(S.guest.run.result)}` : 'Choisis un témoin dans l’onglet Cerveau';
   }
   S.ghostSheet = S.ghost ? cornerSheet(track, S.ghost) : [];
   $('h-ghost').hidden = !S.ghostLabel;
@@ -365,12 +373,15 @@ async function ensureTrainer(fresh = false): Promise<Trainer> {
     // a new condition starts from the dry driver: it already knows the circuit, it only has to find the grip
     const stored = fresh ? null : brainOf(brainKey(S.kartId)) ?? brainOf(brainKey(S.kartId, 'sec'));
     // nothing yet on this circuit: start from the generalist, which already drives a lap almost anywhere
-    const x0 = stored ?? (fresh ? null : GENERALIST);
-    if (!stored && x0) $('brain-msg').textContent = 'Départ depuis le pilote généraliste, entraîné sur les 9 circuits à la fois.';
+    const seed = fresh ? null : S.seed;
+    S.seed = null;
+    const x0 = seed?.brain ?? stored ?? (fresh ? null : GENERALIST);
+    if (seed) $('brain-msg').textContent = `Départ depuis le ${seed.label}.`;
+    else if (!stored && x0) $('brain-msg').textContent = 'Départ depuis le pilote généraliste, entraîné sur les 9 circuits à la fois.';
     // same rolling start as the replay recorder (tool worker), so a recorded lap reproduces the trained one
     const local = new World(world);
     const startSpeed = (s: number) => local.startSpeed(s);
-    const tr = new Trainer(S.pool, { world, lambda: S.pop, seed: (Math.random() * 1e9) | 0, L: track.L, startSpeed, x0: x0?.params, sigma0: stored ? 0.15 : x0 ? 0.25 : 0.5 });
+    const tr = new Trainer(S.pool, { world, lambda: S.pop, seed: (Math.random() * 1e9) | 0, L: track.L, startSpeed, x0: x0?.params, sigma0: stored && !seed ? 0.15 : x0 ? 0.25 : 0.5 });
     (tr as Trainer & { key?: string }).key = key;
     S.trainer = tr;
     S.computeMs = 0;
@@ -464,6 +475,7 @@ async function setKart(k: KartId): Promise<void> {
   S.kartId = k;
   LS.set('kart', k);
   S.trainer = null;
+  S.guest = null;
   updateHeader();
   updateMeta();
   await setBest(brainOf(brainKey(k)));
@@ -478,6 +490,7 @@ async function setWeather(w: Weather): Promise<void> {
   S.weather = w;
   LS.set('weather', w);
   S.trainer = null;
+  S.guest = null;
   scene.setWeather(w);
   $('weather-note').textContent = w === 'sec' ? '' : WEATHERS[w].note;
   updateHeader();
@@ -485,6 +498,7 @@ async function setWeather(w: Weather): Promise<void> {
   void loadTheory(S.kartId);
   void refreshGhost();
   renderWeather();
+  void renderGuests();
 }
 {
   const sel = $<HTMLSelectElement>('weather-sel');
@@ -555,6 +569,77 @@ $('calib').addEventListener('click', async () => {
   updateMeta();
   updateHeader();
   void loadTheory(S.kartId);
+});
+
+// ---------- drivers of the other circuits: tested here, raced as a witness, or used as a starting point ----------
+/** Lap time, or how far the driver got before leaving the track. */
+function outcome(r: Run['result']): string {
+  if (r.completed) return fmtLap(r.lapTime) + (r.clean ? '' : ' (herbe)');
+  return `sorti à ${fr(r.progress)} m (${fr((r.progress / track.L) * 100)} %)`;
+}
+interface Guest {
+  id: string;
+  /** "pilote de Genk", "pilote du Mans": used in sentences. */
+  label: string;
+  name: string;
+  home: string;
+  brain: Brain;
+}
+function guests(): Guest[] {
+  const out: Guest[] = [{ id: 'generaliste', label: 'pilote généraliste', name: 'Généraliste', home: 'les 9 circuits à la fois', brain: GENERALIST }];
+  for (const t of TRACKS) {
+    if (t.id === DEF.id) continue;
+    const b = brainOf(brainKeyOf(t.id, S.kartId, S.weather)) ?? brainOf(brainKeyOf(t.id, S.kartId, 'sec'));
+    const n = t.short ?? t.name;
+    if (b) out.push({ id: t.id, label: `pilote ${n.startsWith('Le ') ? 'du ' + n.slice(3) : 'de ' + n}`, name: n, home: `${n} (${fmtLap(b.lap)})`, brain: b });
+  }
+  return out;
+}
+/** Laps driven here, per guest brain and conditions. */
+const guestRuns = new Map<string, Run>();
+const guestKey = (g: Guest) => `${g.id}:${S.kartId}:${S.weather}:${g.brain.createdAt}`;
+let guestsBusy = false;
+async function renderGuests(): Promise<void> {
+  const list = guests();
+  $('guest-rows').innerHTML = list.map((g) => {
+    const run = guestRuns.get(guestKey(g));
+    const here = run ? (run.result.completed ? `<b>${outcome(run.result)}</b>` : `<span class="neg">${outcome(run.result)}</span>`) : '<span class="faint">test en cours…</span>';
+    return `<tr><td class="nm">${g.name}</td><td>${g.home}</td><td class="num">${here}</td>` +
+      `<td class="acts"><button class="btn small" data-witness="${g.id}"${run ? '' : ' disabled'}>Témoin</button> <button class="btn small" data-seed="${g.id}">Partir de lui</button></td></tr>`;
+  }).join('');
+  $('guest-empty').hidden = list.length > 1;
+  if (guestsBusy) return;
+  // one lap at a time, re-rendering after each so results appear as they come
+  const todo = list.find((g) => !guestRuns.has(guestKey(g)));
+  if (!todo) return;
+  guestsBusy = true;
+  const key = guestKey(todo);
+  const r = await ask({ type: 'record', world: worldOf(S.kartId), params: todo.brain.params });
+  guestsBusy = false;
+  if (r.type !== 'record') return;
+  guestRuns.set(key, r.run);
+  void renderGuests();
+}
+$('guest-rows').addEventListener('click', (e) => {
+  const btn = (e.target as HTMLElement).closest('button');
+  if (!btn) return;
+  const g = guests().find((x) => x.id === (btn.dataset.witness ?? btn.dataset.seed));
+  if (!g) return;
+  if (btn.dataset.witness) {
+    const run = guestRuns.get(guestKey(g));
+    if (!run) return;
+    S.guest = { label: g.name, run };
+    S.ghostMode = 'guest';
+    $<HTMLSelectElement>('ghost').value = 'guest';
+    void refreshGhost();
+    $('guest-msg').textContent = `Témoin : le ${g.label}. Il roule en fantôme bleu dans la vue Piste, en replay comme à côté des pilotes en entraînement.`;
+  } else {
+    S.running = false;
+    S.trainer = null;
+    S.seed = { label: g.label, brain: g.brain };
+    updateHeader();
+    $('guest-msg').textContent = `Le prochain entraînement partira du ${g.label}. Lance-le depuis la vue Piste.`;
+  }
 });
 
 $('export').addEventListener('click', () => {
@@ -826,7 +911,9 @@ function tick(now: number): void {
     });
     scene.setCrowd(poses, leader);
     scene.setHero(null);
-    scene.setGhost(null);
+    // the witness races the population from the same rolling start; the other ghosts belong to the replay
+    const g = S.ghostMode === 'guest' ? S.ghost : null;
+    scene.setGhost(g && el <= g.t[g.n - 1] ? poseAt(g, el) : null);
     target = leader >= 0 ? poses[leader] : null;
     S.pose = target;
     if (frame % 3 === 0) liveHud(leader, leaderV, el, leaderThr, leaderBrk);
@@ -859,6 +946,7 @@ function tick(now: number): void {
 // ---------- views (icon rail) ----------
 function showView(v: string): void {
   if (v === 'analyse') void renderWeather(true);
+  if (v === 'cerveau') void renderGuests();
   if (!document.querySelector(`.view[data-view="${v}"]`)) v = 'piste';
   S.view = v;
   document.querySelectorAll<HTMLElement>('.view').forEach((el) => (el.hidden = el.dataset.view !== v));

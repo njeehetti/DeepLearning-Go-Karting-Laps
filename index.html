@@ -88,6 +88,7 @@
                   <option value="theory">Fantôme : tour parfait</option>
                   <option value="older">Fantôme : génération N−50</option>
                   <option value="other">Fantôme : autre kart</option>
+                  <option value="guest">Fantôme : témoin d’un autre circuit</option>
                 </select>
                 <input type="range" id="scrub" min="0" max="1000" value="0" aria-label="Position dans le tour" />
               </div>
@@ -182,8 +183,8 @@
             <section class="panel" aria-labelledby="h-how">
               <div class="panel-h"><h2 id="h-how">Ce que voit et fait le pilote</h2></div>
               <div class="body prose">
-                <p><b>18 entrées :</b> 9 rayons vers les bords, vitesse, dérive, lacet, écart latéral, erreur de cap, braquage actuel et courbure de la piste à 10, 25 et 50 m.</p>
-                <p><b>16 neurones cachés</b> qui combinent ces signaux.</p>
+                <p><b>22 entrées :</b> 9 rayons vers les bords, vitesse, dérive, lacet, écart latéral, erreur de cap, braquage actuel, courbure de la piste à 10, 25 et 50 m, freinage requis, marge de vitesse, accélération et frein.</p>
+                <p><b>32 neurones cachés</b> qui combinent ces signaux.</p>
                 <p><b>3 sorties</b>, 30 fois par seconde : direction, gaz, frein.</p>
                 <p><b>Ambre</b> : signal positif, <b class="ghost-ink">bleu</b> : signal négatif. L'épaisseur d'un lien est son poids.</p>
               </div>
@@ -195,6 +196,19 @@
                 <button class="btn" id="export">Exporter (.json)</button>
                 <label class="btn" for="import">Importer</label>
                 <input type="file" id="import" accept=".json,application/json" hidden />
+              </div>
+            </section>
+            <section class="panel span3" aria-labelledby="h-guests">
+              <div class="panel-h"><h2 id="h-guests">Pilotes des autres circuits</h2><span class="meta">testés ici tels quels, sans réentraînement</span></div>
+              <div class="tablewrap">
+                <table class="weather-table guest-table">
+                  <thead><tr><th>Pilote</th><th>Entraîné sur</th><th class="num">Tour lancé ici</th><th></th></tr></thead>
+                  <tbody id="guest-rows"></tbody>
+                </table>
+              </div>
+              <div class="body">
+                <p class="note" id="guest-empty" hidden>Entraîne un pilote sur un autre circuit avec le même kart : il apparaîtra ici.</p>
+                <p class="note" id="guest-msg"><b>Témoin</b> : il roule en fantôme, à côté des pilotes en entraînement. <b>Partir de lui</b> : le prochain entraînement démarre de ce pilote au lieu de zéro.</p>
               </div>
             </section>
           </div>
