@@ -52,9 +52,10 @@ export class Mlp {
   }
 }
 
-/** Output head: steer in [−1, 1], throttle and brake in [0, 1] with sensible priors at zero weights. */
+/** Output head: steer in [−1, 1], throttle and brake in [0, 1] with sensible priors at zero weights.
+ *  The brake has a dead zone, so the foot can rest fully off it (and on the throttle, see BRAKE_FOOT). */
 export function controlsFromOutput(out: ArrayLike<number>, dst: { steer: number; throttle: number; brake: number }): void {
   dst.steer = Math.tanh(out[0]);
   dst.throttle = 1 / (1 + Math.exp(-(out[1] + 1)));
-  dst.brake = 1 / (1 + Math.exp(-(out[2] - 2)));
+  dst.brake = Math.max(0, (1 / (1 + Math.exp(-(out[2] - 2))) - 0.2) / 0.8);
 }

@@ -63,6 +63,18 @@ describe('ligne droite', () => {
     expect(st.vx).toBeGreaterThan(5);
   });
 
+  it('lâche les gaz dès qu’on freine : gaz et frein ensemble = frein seul', () => {
+    const sim = new KartSim(qStadium, chassisParams('k270'));
+    const brakeWith = (throttle: number) => {
+      const st = sim.reset(new KartState(), 100, 0, 50 / 3.6);
+      run(sim, st, 1, () => ({ steer: 0, throttle, brake: 0.3 }));
+      return st;
+    };
+    const both = brakeWith(1);
+    expect(both.thr).toBe(0);
+    expect(both.vx).toBe(brakeWith(0).vx);
+  });
+
   it('freine à environ 0,5 g au seuil, roues arrière seules, et moins une fois bloqué', () => {
     const sim = new KartSim(qStadium, chassisParams('k270'));
     const decel = (brake: number) => {

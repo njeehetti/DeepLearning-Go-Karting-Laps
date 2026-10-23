@@ -79,7 +79,7 @@ export function chassisParams(kartId: KartId, opts: PhysOpts = {}): ChassisParam
   const vTop = opts.vTopKmh ? opts.vTopKmh / 3.6 : k.vTop;
   return {
     kartId, m, Iz: 0.18 * m, a: L * rearShare, b: L * (1 - rearShare), twF: 1.0, twR: 1.18, h: 0.28,
-    mu, muSlide: 0.8, B: 14, C: 1.45, E: 0.3, sigma: 0.3, kSlip: 12, liftG: 1.18 / 2 / 0.28, liftSteer: 0.2,
+    mu, muSlide: 0.8, B: 12, C: 1.55, E: 0, sigma: 0.3, kSlip: 12, liftG: 1.18 / 2 / 0.28, liftSteer: 0.2,
     CdA: 0.75, rho: 1.16, Crr: 0.025, grassGrip: 0.5, grassCrr: 0.15, kerbGrip: 0.9,
     deltaMax: 0.4, steerRate: 3, pedalRate: 8,
     brakeMax: 1.6 * mu * m * G * rearShare, pt: makePowertrain(scaleEngine(ENGINES[kartId], opts.powerScale ?? 1), vTop, 0.14, opts.transmission),
@@ -93,6 +93,9 @@ export interface KartInput {
   throttle: number;
   brake: number;
 }
+
+/** Brake demand above which the foot is on the brake pedal and off the throttle. */
+export const BRAKE_FOOT = 0.03;
 
 export class KartState {
   x = 0;
@@ -247,8 +250,11 @@ export class KartSim {
     const dMax = p.steerRate * dt;
     st.delta += Math.max(-dMax, Math.min(dMax, steerT - st.delta));
     const pMax = p.pedalRate * dt;
-    st.thr += Math.max(-pMax, Math.min(pMax, Math.max(0, Math.min(1, inp.throttle)) - st.thr));
-    st.brk += Math.max(-pMax, Math.min(pMax, Math.max(0, Math.min(1, inp.brake)) - st.brk));
+    // one right foot: a brake demand lifts it off the throttle (the golden rule of kart driving)
+    const brkCmd = Math.max(0, Math.min(1, inp.brake));
+    const thrCmd = brkCmd > BRAKE_FOOT ? 0 : Math.max(0, Math.min(1, inp.throttle));
+    st.thr += Math.max(-pMax, Math.min(pMax, thrCmd - st.thr));
+    st.brk += Math.max(-pMax, Math.min(pMax, brkCmd - st.brk));
 
     const { m, a, b, h } = p;
     const L = a + b;
