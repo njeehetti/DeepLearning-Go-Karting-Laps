@@ -146,16 +146,25 @@ export class Scene3D {
     const grp = new THREE.Group();
     const e = (i: number, off: number, lift = 0) => P(t.x[i] + t.nx[i] * off, t.y[i] + t.ny[i] * off, t.z[i] + lift);
     // floodlight poles along the track, outside, away from other branches
+    // (one about every 60 m; where branches run close, try the other side, then further out)
     const poles: THREE.Vector3[] = [];
-    for (let k = 0; k < 22; k++) {
-      const i = Math.floor((k / 22) * N);
-      const side = k % 2 ? 1 : -1;
-      const off = side * (t.half + 4.5);
-      const px = t.x[i] + t.nx[i] * off;
-      const py = t.y[i] + t.ny[i] * off;
-      let ok = true;
-      for (let j = 0; j < N; j += 2) if (Math.hypot(px - t.x[j], py - t.y[j]) < t.half + 2.5) ok = false;
-      if (ok) poles.push(new THREE.Vector3(px, py, 0));
+    const nPoles = Math.max(12, Math.round(t.L / 60));
+    for (let k = 0; k < nPoles; k++) {
+      const i = Math.floor((k / nPoles) * N);
+      found: for (const out of [4.5, 9]) {
+        for (const side of k % 2 ? [1, -1] : [-1, 1]) {
+          const off = side * (t.half + out);
+          const px = t.x[i] + t.nx[i] * off;
+          const py = t.y[i] + t.ny[i] * off;
+          let ok = true;
+          for (let j = 0; j < N && ok; j += 2) if (Math.hypot(px - t.x[j], py - t.y[j]) < t.half + 2.5) ok = false;
+          for (const p of poles) if (ok && Math.hypot(px - p.x, py - p.y) < 30) ok = false;
+          if (ok) {
+            poles.push(new THREE.Vector3(px, py, 0));
+            break found;
+          }
+        }
+      }
     }
     /** Baked sodium light at a track-plane point (0.18 = night ambient). */
     const light = (x: number, y: number) => {
@@ -174,7 +183,7 @@ export class Scene3D {
     }
     const cx = (x0 + x1) / 2;
     const cy = (y0 + y1) / 2;
-    const size = 900;
+    const size = Math.max(900, 2.4 * Math.max(x1 - x0, y1 - y0));
     const gg = new THREE.PlaneGeometry(size, size, 140, 140);
     gg.rotateX(-Math.PI / 2);
     gg.translate(cx, -0.04, -cy);
@@ -311,6 +320,8 @@ export class Scene3D {
     this.scene.add(grp);
     this.center.set(cx, 0, -cy);
     this.orbit.r = Math.max(x1 - x0, y1 - y0) * 1.1;
+    // the overview must stay out of the fog on long circuits
+    this.scene.fog = new THREE.Fog(0x070b10, 120, Math.max(520, this.orbit.r * 1.9));
   }
 
   /** Race line of the best lap, coloured by speed. */

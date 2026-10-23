@@ -35,6 +35,7 @@
             <p class="finding" id="finding">Lance l'entraînement : 256 pilotes vont apprendre la piste en parallèle.</p>
           </div>
           <div class="title-actions">
+            <select id="track-sel" class="track-sel" aria-label="Circuit"></select>
             <div class="tabs" role="group" aria-label="Kart">
               <button id="k270" aria-pressed="true">270cc</button>
               <button id="k390" aria-pressed="false">390cc</button>
@@ -98,7 +99,7 @@
               </div>
               <dl class="times">
                 <div><dt>Tour parfait</dt><dd class="num" id="t-theory">…</dd></div>
-                <div><dt>Ton record</dt><dd class="num" id="t-you">1:36.270</dd></div>
+                <div id="t-you-row"><dt>Ton record</dt><dd class="num" id="t-you">1:36.270</dd></div>
                 <div><dt>Génération</dt><dd class="num" id="s-gen">0</dd></div>
                 <div><dt>Tours bouclés</dt><dd class="num" id="s-comp">–</dd></div>
                 <div><dt>Tours propres</dt><dd class="num" id="s-clean">–</dd></div>
@@ -201,6 +202,8 @@
                 </select>
                 <button class="btn" id="calib">Recaler le kart</button>
                 <p class="note" id="calib-msg"></p>
+                <label class="field" for="myrec" id="myrec-l">Ton record sur ce circuit</label>
+                <input type="text" id="myrec" inputmode="decimal" autocomplete="off" placeholder="1:36.270" />
               </div>
             </section>
             <section class="panel" aria-labelledby="h-model">
@@ -208,6 +211,7 @@
               <div class="body prose">
                 <p><b>Physique à 120 Hz</b> : pneus Pacejka, essieu arrière rigide, frein arrière seul (il peut bloquer), roue intérieure qui se soulève, pente du pont, herbe et vibreurs.</p>
                 <p><b>Calage</b> : les données de location (9 ch, 62 km/h) ne descendent pas sous 1:43 alors qu'on roule en 1:32-1:36. Le kart est calé sur un tour parfait à 1:31.5.</p>
+                <p><b>Autres circuits</b> : on simule un kart de location 270/390cc ; les records publics de ces pistes sont faits en karts de compétition et ne sont pas comparables.</p>
                 <p><a href="legacy/kart-lap-lab.html">Ouvrir la v1</a> · Tracé © contributeurs <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> (ODbL)</p>
               </div>
             </section>

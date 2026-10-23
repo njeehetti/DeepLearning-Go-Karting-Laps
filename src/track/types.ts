@@ -17,6 +17,10 @@ export interface TrackDef {
   /** Start line as a fraction of the loop; default = middle of the longest straight. */
   startFrac?: number;
   source?: 'osm' | 'import' | string;
+  /** OpenStreetMap ways of the loop (scripts/fetch-osm.ts stitches them from `main` in driving order). */
+  osm?: { ways: number[]; main?: number };
+  /** Where officialLength comes from. */
+  lengthSource?: string;
   attribution?: string;
 }
 

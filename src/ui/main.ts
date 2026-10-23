@@ -1,9 +1,8 @@
 // Kart Lap Lab v2 UI: training control, live view, replay, ghosts, telemetry, corner sheet, network.
 import './style.css';
-import lyl from '../../data/tracks/lyl.json';
 import { buildTrack } from '../track/build';
 import { TrackQuery, Proj } from '../track/query';
-import type { TrackDef } from '../track/types';
+import { TRACKS, trackById } from '../track/registry';
 import type { Calibration, CalibrationMode } from '../sim/calibrate';
 import { DEFAULT_CALIBRATION, LAP_EVIDENCE } from '../sim/defaults';
 import { ENGINES, wheelPower } from '../sim/engine';
@@ -20,10 +19,7 @@ import { NnView } from './nnview';
 import { Scene3D, type CamMode } from './scene';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
-const DEF = lyl as TrackDef;
 const SCALE = 'official' as const;
-const track = buildTrack(DEF, { scale: SCALE });
-const q = new TrackQuery(track);
 const G = 9.81;
 const kmh = (v: number) => Math.round(v * 3.6);
 const fr = (n: number, d = 0) => n.toLocaleString('fr-FR', { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -53,9 +49,21 @@ const LS = {
     }
   },
 };
+// circuit: ?c=<id> in the URL, else the last one chosen in this browser
+const DEF = trackById(new URLSearchParams(location.search).get('c') ?? LS.get<string>('track'));
+const track = buildTrack(DEF, { scale: SCALE });
+const q = new TrackQuery(track);
 // v2: 18-input network (wheel angle added); older brains are ignored
 const brainKey = (k: KartId) => `brain2:${DEF.id}:${k}:${SCALE}`;
-const calibKey = (k: KartId) => `calib:${DEF.id}:${k}`;
+// grip and power belong to the kart, not to the circuit (the LYL key is the pre-multi-circuit one)
+const calibKey = (k: KartId) => `calib:kart:${k}`;
+const recordKey = (k: KartId) => `record:${DEF.id}:${k}`;
+/** The driver's own best lap on this circuit and kart (s), NaN if unknown. */
+function myRecord(k: KartId): number {
+  const r = LS.get<number>(recordKey(k));
+  if (r != null) return r > 0 ? r : NaN;
+  return DEF.id === 'lyl' && k === 'k270' ? LAP_EVIDENCE.driverBest270 : NaN;
+}
 
 // ---------- state ----------
 const S = {
@@ -102,7 +110,7 @@ const S = {
 };
 
 function calibOf(k: KartId): Calibration {
-  return LS.get<Calibration>(calibKey(k)) ?? DEFAULT_CALIBRATION[k];
+  return LS.get<Calibration>(calibKey(k)) ?? LS.get<Calibration>(`calib:lyl:${k}`) ?? DEFAULT_CALIBRATION[k];
 }
 function worldOf(k: KartId): WorldSpec {
   const c = calibOf(k);
@@ -151,8 +159,9 @@ function updateHeader(): void {
   $('t-best').textContent = fmtLap(best);
   const th = S.theory.get(S.kartId);
   $('t-theory').textContent = th ? fmtLap(th.lap) : '…';
-  const you = S.kartId === 'k270' ? LAP_EVIDENCE.driverBest270 : NaN;
+  const you = myRecord(S.kartId);
   $('t-you').textContent = fmtLap(you);
+  $('t-you-row').hidden = !Number.isFinite(you);
   const gap = Number.isFinite(best) && th ? best - th.lap : NaN;
   $('t-gap').innerHTML = Number.isFinite(gap)
     ? `<span class="neg">+${fr(gap, 2)} s</span> sur le tour parfait${Number.isFinite(you) ? ` · ${best <= you ? `<span class="pos">−${fr(you - best, 2)} s</span> sous ton record` : `+${fr(best - you, 2)} s sur ton record`}` : ''}`
@@ -168,6 +177,20 @@ function updateHeader(): void {
   $('k270').setAttribute('aria-pressed', String(S.kartId === 'k270'));
   $('k390').setAttribute('aria-pressed', String(S.kartId === 'k390'));
 }
+// ---------- circuit picker (switching rebuilds everything, so it reloads the page) ----------
+{
+  const sel = $<HTMLSelectElement>('track-sel');
+  sel.innerHTML = TRACKS.map((t) => `<option value="${t.id}"${t.id === DEF.id ? ' selected' : ''}>${t.short ?? t.name}</option>`).join('');
+  sel.addEventListener('change', () => {
+    LS.set('track', sel.value);
+    const u = new URL(location.href);
+    u.searchParams.delete('c');
+    location.href = u.toString();
+  });
+  $('t-track').textContent = DEF.short ?? DEF.name;
+  document.title = `Kart Lap Lab · ${DEF.short ?? DEF.name}`;
+}
+
 function updateMeta(): void {
   const c = calibOf(S.kartId);
   const k = KARTS[S.kartId];
@@ -180,10 +203,15 @@ function updateMeta(): void {
     ['Transmission', c.transmission === 'cvt' ? 'variateur (hypothèse)' : 'directe, embrayage centrifuge'],
     ['Masse', `${k.kartMass} kg + pilote ${c.driver} kg`],
     ['Tour parfait visé', Number.isFinite(c.targetLap) ? fmtLap(c.targetLap) : 'pas de donnée'],
+    ['Circuit', `${DEF.name}, ${fr(track.L)} m${DEF.direction ? `, sens ${DEF.direction}` : ''}`],
+    ['Longueur officielle', DEF.lengthSource ?? 'tracé OSM'],
   ];
   $('kart-meta').innerHTML = rows.map(([a, b, w]) => `<div><dt>${a}</dt><dd${w ? ' class="warn"' : ''}>${b}</dd></div>`).join('');
   ($('mylap') as HTMLInputElement).value = Number.isFinite(c.targetLap) ? fmtLap(c.targetLap) : '';
   ($('calmode') as HTMLSelectElement).value = c.mode;
+  const you = myRecord(S.kartId);
+  ($('myrec') as HTMLInputElement).value = Number.isFinite(you) ? fmtLap(you) : '';
+  $('myrec-l').textContent = `Ton record en ${KARTS[S.kartId].label} sur ${DEF.short ?? DEF.name}`;
 }
 
 // ---------- best brain, replay, ghosts ----------
@@ -396,6 +424,15 @@ function parseLap(s: string): number {
   const p = t.split(':');
   return p.length === 2 ? parseInt(p[0], 10) * 60 + parseFloat(p[1]) : parseFloat(t);
 }
+$('myrec').addEventListener('change', () => {
+  const v = ($('myrec') as HTMLInputElement).value.trim();
+  const t = parseLap(v);
+  if (v === '') LS.set(recordKey(S.kartId), -1);
+  else if (Number.isFinite(t) && t > 20 && t < 300) LS.set(recordKey(S.kartId), t);
+  updateHeader();
+  updateMeta();
+});
+
 $('calib').addEventListener('click', async () => {
   const target = parseLap(($('mylap') as HTMLInputElement).value);
   const msg = $('calib-msg');

@@ -1,6 +1,6 @@
 # Kart Lap Lab
 
-**Des pilotes à réseau de neurones apprennent à boucler le LYL International Karting Circuit** (Sungai Long, Kajang, Malaisie) en kart de location 270cc ou 390cc, génération après génération, dans le navigateur. On les regarde progresser en 3D de nuit, puis on étudie le meilleur tour pour savoir où freiner, où remettre les gaz et par où passer.
+**Des pilotes à réseau de neurones apprennent à boucler un circuit de karting** en kart de location 270cc ou 390cc, génération après génération, dans le navigateur. Circuit de référence : le LYL International Karting Circuit (Sungai Long, Kajang, Malaisie), plus huit pistes connues d'Europe. On les regarde progresser en 3D de nuit, puis on étudie le meilleur tour pour savoir où freiner, où remettre les gaz et par où passer.
 
 ![Vue Piste : la génération en cours, le chronométrage et le temps perdu par virage](docs/images/apercu.png)
 
@@ -23,6 +23,22 @@
 | ![Vue Cerveau : le réseau du meilleur pilote](docs/images/cerveau.png) | ![Version mobile](docs/images/mobile.png) |
 | **Cerveau.** Le réseau du meilleur pilote, avec ses activations en direct pendant le replay. | **Sur téléphone.** Même application, navigation en bas d'écran. |
 
+## Circuits
+
+| Circuit | Lieu | Longueur |
+|---|---|---|
+| LYL International | Sungai Long, Malaisie (avec pont) | 1 514 m |
+| Adria Karting Raceway | Adria, Italie | 1 302 m |
+| Karting Genk | Genk, Belgique | 1 360 m |
+| Åsum Ring | Kristianstad, Suède | 1 221 m |
+| Le Mans Karting International | Le Mans, France (anti-horaire) | 1 384 m |
+| PFi | Brandon, Royaume-Uni (avec pont) | 1 382 m |
+| Circuito Internazionale Napoli | Sarno, Italie | 1 670 m |
+| South Garda Karting | Lonato, Italie | 1 200 m |
+| Circuito Internacional de Zuera | Zuera, Espagne | 1 700 m |
+
+Le circuit se choisit en haut de la page (ou avec `?c=genk` dans l'adresse). Chaque circuit garde son meilleur cerveau et ton record, à saisir dans la vue Kart. Le kart reste un kart de location : les records publics de ces pistes, faits en karts de compétition, ne sont pas comparables.
+
 ## Lancer
 
 ```bash
@@ -33,10 +49,10 @@ npm run dev        # http://localhost:5173
 Clique **Lancer l'entraînement**. Le premier tour propre arrive en quelques secondes ; laisse tourner quelques minutes pour voir le temps descendre. Le meilleur cerveau est gardé dans le navigateur, et s'exporte en JSON depuis la vue Cerveau.
 
 ```bash
-npm test           # 69 tests : physique, piste, IA, non-régression v1, calage
+npm test           # 81 tests : physique, circuits, IA, non-régression v1, calage
 npm run test:slow  # non-régression complète de la v1 (≈ 1 min)
 npm run build      # site statique dans dist/
-npx tsx scripts/train-headless.ts --kart k270 --minutes 10   # entraînement sans interface
+npx tsx scripts/train-headless.ts --track genk --kart k270 --minutes 10   # entraînement sans interface
 ```
 
 
@@ -44,7 +60,7 @@ npx tsx scripts/train-headless.ts --kart k270 --minutes 10   # entraînement san
 
 **La physique** tourne à 120 Hz, de façon déterministe : pneus Pacejka simplifiés, essieu arrière rigide, frein arrière seul qui peut bloquer, roue intérieure qui se soulève en virage serré, transfert de charge, pente du pont, herbe, vibreurs, murs de pneus. Un tête-à-queue est possible.
 
-**Le pilote** est un réseau de neurones 18-16-3. Il reçoit 9 rayons vers les bords de piste, sa vitesse, sa dérive, son lacet, son écart latéral, son erreur de cap, son braquage actuel et la courbure de la piste à 10, 25 et 50 m. Il décide 30 fois par seconde de la direction, du gaz et du frein, avec l'inertie des mains sur le volant.
+**Le pilote** est un réseau de neurones 18-16-3. Il reçoit 9 rayons vers les bords de piste, sa vitesse, sa dérive, son lacet, son écart latéral, son erreur de cap, son braquage actuel et la courbure de la piste à 10, 25 et 50 m. Il décide 30 fois par seconde de la direction, du gaz et du frein, avec l'inertie des mains sur le volant. Comme un vrai pilote, il n'a qu'un pied droit : dès qu'il freine, il lâche les gaz.
 
 **L'apprentissage** est une neuroévolution (sep-CMA-ES) : à chaque génération, 256 variantes du cerveau roulent en parallèle dans des Web Workers ; les meilleures orientent la génération suivante. Le meilleur pilote reroule à chaque génération, donc le record ne recule jamais. D'abord finir le tour, ensuite aller vite ; scier le volant ou tapoter les pédales coûte des points.
 
@@ -59,8 +75,8 @@ La vitesse de pointe (80 km/h) et la transmission (variateur) sont des hypothès
 ## Ajouter un circuit
 
 1. Récupère le tracé d'un tour complet dans le sens de roulage : trace GPX, LineString GeoJSON, ou réponse Overpass (`out body geom`).
-2. Crée `data/tracks/<id>.json` au format `TrackDef` (voir `src/track/types.ts`) : `id`, `name`, `coords` en `[lat, lon]`, `width`, et si besoin `officialLength`, `bridge` et `startFrac`. `parseTrackFile()` (`src/track/import.ts`) convertit les trois formats.
-3. Pour le LYL, `npx tsx scripts/fetch-osm.ts` récupère les ways OSM 1388683501 et 1388688194 et les compare au fichier ; `--write` le met à jour.
+2. Crée `data/tracks/<id>.json` au format `TrackDef` (voir `src/track/types.ts`) : `id`, `name`, `coords` en `[lat, lon]`, `width`, et si besoin `officialLength` (avec sa source dans `lengthSource`), `bridge` et `startFrac`. `parseTrackFile()` (`src/track/import.ts`) convertit les trois formats. Le fichier est repris automatiquement par le sélecteur et par les tests.
+3. Depuis OpenStreetMap : mets les ways du tracé dans `osm.ways` (et le premier dans `osm.main`), puis `npx tsx scripts/fetch-osm.ts --track <id> --write` les raccorde dans le sens de roulage et remplit `coords`.
 
 ## Organisation du code
 

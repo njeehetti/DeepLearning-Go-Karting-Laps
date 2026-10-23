@@ -76,10 +76,13 @@ export class TrackQuery {
     }
     this.kerb = new Float64Array(N);
     this.wall = new Float64Array(N);
+    let zMax = 0;
+    for (let i = 0; i < N; i++) zMax = Math.max(zMax, track.z[i]);
     for (let i = 0; i < N; i++) {
       const onBridge = track.z[i] > 0.1;
       this.kerb[i] = inCorner[i] && !onBridge ? 0.95 : 0;
-      this.wall[i] = onBridge ? 0.15 : inCorner[i] ? 2.6 : 1.7;
+      // parapet on the deck only (top 20 % of the height); the ramps are embankments with the usual tyre wall
+      this.wall[i] = zMax > 0 && track.z[i] > 0.8 * zMax ? 0.15 : inCorner[i] ? 2.6 : 1.7;
     }
   }
 

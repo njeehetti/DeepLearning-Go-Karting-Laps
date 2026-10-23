@@ -1,9 +1,8 @@
 // Headless training benchmark (criteria 1 and 2): npx tsx scripts/train-headless.ts [--kart k270]
-// [--minutes 10] [--lambda 256] [--workers N] [--seed 1] [--out out/brains]
+// [--track lyl] [--minutes 10] [--lambda 256] [--workers N] [--seed 1] [--out out/brains]
 import { availableParallelism } from 'node:os';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { Worker } from 'node:worker_threads';
-import lyl from '../data/tracks/lyl.json';
 import type { TrackDef } from '../src/track/types';
 import { DEFAULT_CALIBRATION } from '../src/sim/defaults';
 import { World, type FromWorker, type WorldSpec } from '../src/ai/evalCore';
@@ -20,10 +19,12 @@ const lambda = parseInt(arg('lambda', '256'), 10);
 const nWorkers = parseInt(arg('workers', String(Math.max(1, availableParallelism() - 1))), 10);
 const seed = parseInt(arg('seed', '1'), 10);
 const outDir = arg('out', 'out/brains');
+const trackId = arg('track', 'lyl');
+const def = JSON.parse(readFileSync(new URL(`../data/tracks/${trackId}.json`, import.meta.url), 'utf8')) as TrackDef;
 
 const c = DEFAULT_CALIBRATION[kartId];
 const world: WorldSpec = {
-  track: lyl as TrackDef, scale: 'official',
+  track: def, scale: 'official',
   kart: { kartId, mu: c.mu, powerScale: c.powerScale, vTopKmh: c.vTopKmh, transmission: c.transmission, driver: c.driver },
 };
 const local = new World(world);

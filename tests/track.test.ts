@@ -3,6 +3,7 @@ import lyl from '../data/tracks/lyl.json';
 import { buildTrack } from '../src/track/build';
 import { project, signedArea } from '../src/track/geometry';
 import type { TrackDef } from '../src/track/types';
+import { TRACKS } from '../src/track/registry';
 
 const def = lyl as TrackDef;
 
@@ -50,5 +51,20 @@ describe('option de mise à l’échelle', () => {
 
   it('« osm » ignore la longueur officielle', () => {
     expect(buildTrack(def, { scale: 'osm' }).L).toBeCloseTo(buildTrack(def).L, 9);
+  });
+});
+
+describe('circuits du monde', () => {
+  it.each(TRACKS.map((d) => [d.id, d] as const))('%s : boucle cohérente avec sa longueur officielle et son sens', (_id, d) => {
+    expect(d.coords.length).toBeGreaterThan(40);
+    expect(d.attribution).toMatch(/OpenStreetMap/);
+    const osm = buildTrack(d, { scale: 'osm' });
+    // the OSM centreline is within 5 % of the published length, so the rescale stays a small correction
+    expect(Math.abs(osm.L / d.officialLength! - 1)).toBeLessThan(0.05);
+    const t = buildTrack(d, { scale: 'official' });
+    expect(Math.abs(t.L - d.officialLength!)).toBeLessThan(2);
+    expect(t.corners.length).toBeGreaterThanOrEqual(10);
+    expect(t.crossings).toHaveLength(d.bridge ? 1 : 0);
+    if (d.direction) expect(signedArea(project(d.coords).pts) < 0 ? 'horaire' : 'anti-horaire').toBe(d.direction);
   });
 });

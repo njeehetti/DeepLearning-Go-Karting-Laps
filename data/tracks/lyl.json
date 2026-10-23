@@ -12,6 +12,7 @@
   "plateau": 10
  },
  "source": "osm",
+ "osm": {"ways": [1388683501, 1388688194], "main": 1388683501},
  "attribution": "© contributeurs OpenStreetMap (ODbL) — ways 1388683501 + 1388688194",
  "coords": [
   [3.0524507,101.8456849],

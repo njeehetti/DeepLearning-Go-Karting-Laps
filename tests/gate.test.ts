@@ -1,10 +1,9 @@
 // Validation gate: the scripted driver following the "tour théorique v2" line and speed profile in the
 // dynamic model must be slower than the theoretical lap (it is an upper bound) but by no more than 10 %.
 import { expect, it } from 'vitest';
-import lyl from '../data/tracks/lyl.json';
 import { buildTrack } from '../src/track/build';
 import { TrackQuery } from '../src/track/query';
-import type { TrackDef } from '../src/track/types';
+import { trackById } from '../src/track/registry';
 import { KartSim, KartState, chassisParams } from '../src/sim/kart';
 import { LineEvaluator, lineLimits } from '../src/sim/qss';
 import { LineGA } from '../src/sim/lineGA';
@@ -12,8 +11,9 @@ import { kartParams } from '../src/sim/karts';
 import { makeQss2, solveQss2 } from '../src/sim/qss2';
 import { PursuitDriver } from '../src/ai/pursuit';
 
-it('le pilote scripté boucle de +3 % à +10 % au-dessus du tour théorique v2', () => {
-  const track = buildTrack(lyl as TrackDef, { scale: 'official' });
+// LYL (with its bridge), plus a long flowing track and a second bridge track
+it.each(['lyl', 'genk', 'pfi'])('%s : le pilote scripté boucle de +3 % à +10 % au-dessus du tour théorique v2', (id) => {
+  const track = buildTrack(trackById(id), { scale: 'official' });
   const q = new TrackQuery(track);
   const p = chassisParams('k270', { mu: 1.45 });
   const m = makeQss2(p);
