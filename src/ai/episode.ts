@@ -54,6 +54,8 @@ export class Pilot {
   readonly obs = new Float64Array(N_OBS);
   readonly rays = new Float64Array(9);
   readonly inp: KartInput = { steer: 0, throttle: 0, brake: 0 };
+  /** Theoretical centreline speed (m/s) of the circuit being driven, see observe(). */
+  profile: Float64Array | null = null;
   private steer = 0;
 
   reset(): void {
@@ -61,7 +63,7 @@ export class Pilot {
   }
 
   decide(q: TrackQuery, st: KartState, params: ArrayLike<number>, deltaMax = 0.4): KartInput {
-    observe(q, st, this.obs, this.rays, deltaMax);
+    observe(q, st, this.obs, this.rays, deltaMax, this.profile);
     controlsFromOutput(this.mlp.forward(params, this.obs), this.inp);
     this.steer += (this.inp.steer - this.steer) * STEER_ALPHA;
     this.inp.steer = this.steer;

@@ -37,7 +37,7 @@
 | South Garda Karting | Lonato, Italie | 1 200 m |
 | Circuito Internacional de Zuera | Zuera, Espagne | 1 700 m |
 
-Le circuit se choisit en haut de la page (ou avec `?c=genk` dans l'adresse). Chaque circuit garde son meilleur cerveau et ton record, à saisir dans la vue Kart. Le kart reste un kart de location : les records publics de ces pistes, faits en karts de compétition, ne sont pas comparables.
+Le circuit se choisit en haut de la page (ou avec `?c=genk` dans l'adresse). Chaque circuit a son habillage : couleurs du pays, et un décor dessiné d'après le lieu, en en-tête et à l'horizon de la 3D (tours Petronas vues de Kajang, pont Dunlop au Mans, chevalements de mine à Genk, Vésuve à Sarno, moulin de Heckington près de PFi…). Chaque circuit garde son meilleur cerveau et ton record, à saisir dans la vue Kart. Le kart reste un kart de location : les records publics de ces pistes, faits en karts de compétition, ne sont pas comparables.
 
 ## Lancer
 
@@ -60,11 +60,13 @@ npx tsx scripts/train-headless.ts --track genk --kart k270 --minutes 10   # entr
 
 **La physique** tourne à 120 Hz, de façon déterministe : pneus Pacejka simplifiés, essieu arrière rigide, frein arrière seul qui peut bloquer, roue intérieure qui se soulève en virage serré, transfert de charge, pente du pont, herbe, vibreurs, murs de pneus. Un tête-à-queue est possible.
 
-**Le pilote** est un réseau de neurones 18-16-3. Il reçoit 9 rayons vers les bords de piste, sa vitesse, sa dérive, son lacet, son écart latéral, son erreur de cap, son braquage actuel et la courbure de la piste à 10, 25 et 50 m. Il décide 30 fois par seconde de la direction, du gaz et du frein, avec l'inertie des mains sur le volant. Comme un vrai pilote, il n'a qu'un pied droit : dès qu'il freine, il lâche les gaz.
+**Le pilote** est un réseau de neurones 22-16-3. Il reçoit 9 rayons vers les bords de piste, sa vitesse, sa dérive, son lacet, son écart latéral, son erreur de cap, son braquage actuel, la courbure de la piste à 10, 25 et 50 m, et ce qu'un pilote sait du circuit : le freinage nécessaire pour passer les prochains virages, sa marge de vitesse, son accélération et sa pédale de frein. Il décide 30 fois par seconde de la direction, du gaz et du frein, avec l'inertie des mains sur le volant. Comme un vrai pilote, il n'a qu'un pied droit : dès qu'il freine, il lâche les gaz.
 
 **L'apprentissage** est une neuroévolution (sep-CMA-ES) : à chaque génération, 256 variantes du cerveau roulent en parallèle dans des Web Workers ; les meilleures orientent la génération suivante. Le meilleur pilote reroule à chaque génération, donc le record ne recule jamais. D'abord finir le tour, ensuite aller vite ; scier le volant ou tapoter les pédales coûte des points.
 
-**Le tour parfait** est une borne quasi-statique : la meilleure trajectoire possible pour ce kart, avec son adhérence, son moteur et son freinage. Il sert de fantôme et de référence pour le temps perdu par virage.
+**Le tour parfait** est une référence quasi-statique : la meilleure trajectoire trouvée pour ce kart réduit à un point, avec son adhérence, son moteur et son freinage. Il sert de fantôme et de référence pour le temps perdu par virage ; un pilote bien entraîné dans le modèle complet peut le battre de quelques dixièmes.
+
+**La fiche virages** donne aussi la technique : la part du freinage faite en tournant déjà (freinage dégressif) et le dosage maximal, et l'équilibre du volant (neutre, sous-vire, survire) avec la dérive maximale.
 
 ## Calage et hypothèses
 

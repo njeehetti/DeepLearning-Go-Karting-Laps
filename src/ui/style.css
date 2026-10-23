@@ -50,7 +50,14 @@ a { color: var(--text); }
 .nav:hover { color: var(--text); }
 .nav[aria-current='page'] { color: var(--text); }
 .nav[aria-current='page']::after { content: ''; position: absolute; right: -1px; top: 12px; bottom: 12px; width: 1px; background: var(--accent); }
-.canvas { min-width: 0; padding: 24px var(--pad) 40px; }
+.canvas { min-width: 0; padding: 24px var(--pad) 40px; position: relative; isolation: isolate; }
+/* the circuit's place: flag stripe on top, a night glow in the accent and the skyline drawn in themes.ts */
+.place { position: absolute; z-index: -1; inset: 0 0 auto 0; height: 136px; overflow: hidden; pointer-events: none;
+  background: radial-gradient(55% 140% at 68% 100%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 72%); }
+.place::before { content: ''; position: absolute; inset: 0 0 auto 0; height: 3px; background: var(--flag, var(--accent)); }
+.place canvas { position: absolute; left: 0; right: 0; bottom: 0; width: 100%; height: 118px; object-fit: cover; object-position: 70% bottom;
+  -webkit-mask-image: linear-gradient(to right, transparent 38%, #000 66%); mask-image: linear-gradient(to right, transparent 38%, #000 66%); }
+.place::after { content: ''; position: absolute; inset: auto 0 0 0; height: 18px; background: linear-gradient(to bottom, transparent, var(--ground)); }
 
 /* ---------- title row ---------- */
 .title-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; flex-wrap: wrap; margin-bottom: 24px; }

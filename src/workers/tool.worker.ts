@@ -50,7 +50,7 @@ function theoryRun(spec: WorldSpec, kart: KartSetup, gens: number): { run: Run; 
   const lap = solveQss2(ev, m);
   const N = ev.N;
   const f = () => new Float32Array(N + 1);
-  const run: Run = { hz: 0, n: N + 1, t: f(), x: f(), y: f(), z: f(), psi: f(), v: f(), ax: f(), ay: f(), thr: f(), brk: f(), steer: f(), s: f(), dist: f(), d: f(), obs: new Float32Array((N + 1) * N_OBS),
+  const run: Run = { hz: 0, n: N + 1, t: f(), x: f(), y: f(), z: f(), psi: f(), v: f(), ax: f(), ay: f(), thr: f(), brk: f(), steer: f(), beta: f(), s: f(), dist: f(), d: f(), obs: new Float32Array((N + 1) * N_OBS),
     result: { fitness: 0, progress: track.L, completed: true, clean: true, lapTime: lap, offTime: 0, end: 'tour', steerActivity: 0 } };
   let t = 0;
   let dist = 0;

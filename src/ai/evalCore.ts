@@ -78,6 +78,7 @@ export class Evaluator {
 
   constructor(world: World) {
     this.world = world;
+    this.pilot.profile = world.profile;
     this.x = new Float64Array(world.dim);
     this.z = new Float64Array(world.dim);
   }

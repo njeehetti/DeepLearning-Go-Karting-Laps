@@ -20,6 +20,8 @@ export interface Run {
   thr: Float32Array;
   brk: Float32Array;
   steer: Float32Array;
+  /** Body slip angle (rad): how sideways the kart travels. */
+  beta: Float32Array;
   s: Float32Array;
   dist: Float32Array;
   d: Float32Array;
@@ -31,8 +33,9 @@ export interface Run {
 export function recordRun(world: World, params: ArrayLike<number>, spec: EpisodeSpec): Run {
   const cap = Math.ceil(spec.maxTime * 30) + 2;
   const f = () => new Float32Array(cap);
-  const run = { hz: 30, n: 0, t: f(), x: f(), y: f(), z: f(), psi: f(), v: f(), ax: f(), ay: f(), thr: f(), brk: f(), steer: f(), s: f(), dist: f(), d: f(), obs: new Float32Array(cap * N_OBS) };
+  const run = { hz: 30, n: 0, t: f(), x: f(), y: f(), z: f(), psi: f(), v: f(), ax: f(), ay: f(), thr: f(), brk: f(), steer: f(), beta: f(), s: f(), dist: f(), d: f(), obs: new Float32Array(cap * N_OBS) };
   const pilot = new Pilot();
+  pilot.profile = world.profile;
   const result = runEpisode(world.sim, pilot, params, spec, new KartState(), (st, inp, decided) => {
     if (!decided || run.n >= cap) return;
     const k = run.n++;
@@ -47,6 +50,7 @@ export function recordRun(world: World, params: ArrayLike<number>, spec: Episode
     run.thr[k] = st.thr;
     run.brk[k] = st.brk;
     run.steer[k] = inp.steer;
+    run.beta[k] = Math.atan2(st.vy, Math.max(Math.abs(st.vx), 0.5));
     run.s[k] = st.s;
     run.dist[k] = st.dist;
     run.d[k] = st.d;
@@ -97,7 +101,18 @@ export interface CornerSheetRow {
   /** Unwrapped run distance of the apex and of the braking point (m). */
   distApex: number;
   distBrake: number;
+  /** Braking technique: strongest pedal, and share of the braking distance already turning (trail braking). */
+  brakePeak: number;
+  trail: number;
+  /** Largest slip angle around the corner (°): a neutral kart stays under ~6°. */
+  drift: number;
+  /** Mean front-wheel angle beyond what the path needs (°): > 0 understeer (pushing), < 0 oversteer / countersteer. */
+  steerExcess: number;
 }
+
+/** Wheelbase (m) and front lock (rad) of the rental karts, see chassisParams(). */
+const WHEELBASE = 1.05;
+const DELTA_MAX = 0.4;
 
 /** Index of the last sample with dist ≤ value. */
 export function indexAtDist(run: Run, dist: number): number {
@@ -137,12 +152,35 @@ export function cornerSheet(track: Track, run: Run): CornerSheetRow[] {
     const inside = c.dir === 'G' ? run.d[kA] : -run.d[kA];
     const kS0 = at(run.dist[kA] - 30);
     const kS1 = at(run.dist[kA] + 30);
+    let brakePeak = 0;
+    let turning = 0;
+    if (kB >= 0) {
+      for (let k = kB; k <= kA; k++) {
+        brakePeak = Math.max(brakePeak, run.brk[k]);
+        if (Math.abs(run.ay[k]) > 0.4 * 9.81 && k > kB) turning += run.dist[k] - run.dist[k - 1];
+      }
+    }
+    let drift = 0;
+    let excess = 0;
+    let nEx = 0;
+    for (let k = k0; k <= k1; k++) {
+      drift = Math.max(drift, Math.abs(run.beta[k]));
+      const v = run.v[k];
+      if (v < 3 || Math.abs(run.ay[k]) < 2) continue;
+      // front angle the path needs (kinematic, plus the rear's own slip) vs the angle held
+      const need = (WHEELBASE * Math.abs(run.ay[k])) / (v * v);
+      const held = Math.sign(run.ay[k]) * run.steer[k] * DELTA_MAX;
+      excess += held - need;
+      nEx++;
+    }
     return {
       name: c.name, dir: c.dir, kind: c.kind, angle: c.angle,
       brakeDist: kB >= 0 ? run.dist[kA] - run.dist[kB] : 0,
       vEntry, vApex: run.v[kA], vExit: run.v[kExit], latG,
       apexFromInside: track.half - inside, tApex: run.t[kA], tBrake: kB >= 0 ? run.t[kB] : run.t[kA],
       sectorTime: run.t[kS1] - run.t[kS0], distApex: run.dist[kA], distBrake: kB >= 0 ? run.dist[kB] : -1,
+      brakePeak, trail: kB >= 0 && kA > kB ? turning / Math.max(1e-6, run.dist[kA] - run.dist[kB]) : NaN,
+      drift: (drift * 180) / Math.PI, steerExcess: nEx ? ((excess / nEx) * 180) / Math.PI : 0,
     };
   });
 }

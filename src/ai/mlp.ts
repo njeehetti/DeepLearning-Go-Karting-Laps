@@ -6,7 +6,7 @@ export interface MlpShape {
   sizes: number[];
 }
 
-export const DRIVER_SHAPE: MlpShape = { sizes: [18, 16, 3] };
+export const DRIVER_SHAPE: MlpShape = { sizes: [22, 16, 3] };
 
 export function paramCount(shape: MlpShape): number {
   let n = 0;

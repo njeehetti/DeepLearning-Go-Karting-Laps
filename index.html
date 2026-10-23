@@ -29,6 +29,7 @@
       </nav>
 
       <div class="canvas">
+        <div class="place" id="place" aria-hidden="true"></div>
         <header class="title-row">
           <div class="title-text">
             <h1><span id="t-track">LYL International</span> · <span id="t-kart">270cc</span></h1>
@@ -148,7 +149,7 @@
               <div class="panel-h"><h2 id="h-corners">Fiche virages</h2><span class="meta" id="corner-read">Clique un virage pour le revoir en 3D</span></div>
               <div class="tablewrap">
                 <table>
-                  <thead><tr><th>Virage</th><th>Type</th><th class="num">Freinage</th><th class="num">Entrée</th><th class="num">Corde</th><th class="num">Sortie</th><th class="num">Accél. lat.</th><th class="num">Placement à la corde</th><th class="num" id="th-delta">Écart fantôme</th></tr></thead>
+                  <thead><tr><th>Virage</th><th>Type</th><th class="num">Freinage</th><th class="num">Entrée</th><th class="num">Corde</th><th class="num">Sortie</th><th class="num">Accél. lat.</th><th class="num">Placement à la corde</th><th class="num" title="Part du freinage faite en tournant déjà (freinage dégressif)">Frein dégressif</th><th class="num" title="Angle de volant au-delà de ce que la trajectoire demande, et dérive maximale">Volant · dérive</th><th class="num" id="th-delta">Écart fantôme</th></tr></thead>
                   <tbody id="corners"></tbody>
                 </table>
               </div>

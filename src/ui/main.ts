@@ -17,6 +17,7 @@ import type { ToolRequest, ToolResponse } from '../workers/tool.worker';
 import { drawEvo, drawTel, fmtLap, type TelGeom } from './charts';
 import { NnView } from './nnview';
 import { Scene3D, type CamMode } from './scene';
+import { applyTheme, skylineCanvas, themeOf } from './themes';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const SCALE = 'official' as const;
@@ -53,8 +54,17 @@ const LS = {
 const DEF = trackById(new URLSearchParams(location.search).get('c') ?? LS.get<string>('track'));
 const track = buildTrack(DEF, { scale: SCALE });
 const q = new TrackQuery(track);
-// v2: 18-input network (wheel angle added); older brains are ignored
-const brainKey = (k: KartId) => `brain2:${DEF.id}:${k}:${SCALE}`;
+// the page takes the colours and the skyline of the circuit's place
+const THEME = themeOf(DEF.id);
+applyTheme(THEME);
+{
+  const host = $('place');
+  const sky = skylineCanvas(THEME, 1600, 170, '#0b0b0d');
+  sky.setAttribute('aria-hidden', 'true');
+  host.appendChild(sky);
+}
+// v3: 22-input network (braking need, speed margin, acceleration, brake pedal); older brains are ignored
+const brainKey = (k: KartId) => `brain3:${DEF.id}:${k}:${SCALE}`;
 // grip and power belong to the kart, not to the circuit (the LYL key is the pre-multi-circuit one)
 const calibKey = (k: KartId) => `calib:kart:${k}`;
 const recordKey = (k: KartId) => `record:${DEF.id}:${k}`;
@@ -144,7 +154,7 @@ function ask(req: DistOmit<ToolRequest, 'id'>): Promise<ToolResponse> {
 }
 
 // ---------- 3D ----------
-const scene = new Scene3D($<HTMLCanvasElement>('c3d'), q);
+const scene = new Scene3D($<HTMLCanvasElement>('c3d'), q, THEME);
 if (!scene.ok) $('no3d').hidden = false;
 new ResizeObserver(() => {
   const r = $('view3d').getBoundingClientRect();
@@ -164,12 +174,12 @@ function updateHeader(): void {
   $('t-you-row').hidden = !Number.isFinite(you);
   const gap = Number.isFinite(best) && th ? best - th.lap : NaN;
   $('t-gap').innerHTML = Number.isFinite(gap)
-    ? `<span class="neg">+${fr(gap, 2)} s</span> sur le tour parfait${Number.isFinite(you) ? ` · ${best <= you ? `<span class="pos">−${fr(you - best, 2)} s</span> sous ton record` : `+${fr(best - you, 2)} s sur ton record`}` : ''}`
+    ? `${gap > 0 ? `<span class="neg">+${fr(gap, 2)} s</span> sur le tour parfait` : `<span class="pos">−${fr(-gap, 2)} s</span> sous le tour parfait`}${Number.isFinite(you) ? ` · ${best <= you ? `<span class="pos">−${fr(you - best, 2)} s</span> sous ton record` : `+${fr(best - you, 2)} s sur ton record`}` : ''}`
     : 'Pas encore de tour propre';
   const gens = S.trainer?.history.length ?? 0;
   $('finding').innerHTML = !S.best
     ? `Lance l'entraînement : ${S.pop} pilotes vont apprendre la piste en parallèle.`
-    : `Meilleur tour IA <b>${fmtLap(best)}</b>${th ? `, à <b>${fr(gap, 2)} s</b> du tour parfait` : ''}${S.sheet.length && S.theorySheet.length ? ` · le plus de temps perdu en <b>${worstCorner()}</b>` : ''}${gens ? ` · génération ${gens}` : ''}.`;
+    : `Meilleur tour IA <b>${fmtLap(best)}</b>${th ? (gap > 0 ? `, à <b>${fr(gap, 2)} s</b> du tour parfait` : `, <b>${fr(-gap, 2)} s</b> sous le tour parfait`) : ''}${S.sheet.length && S.theorySheet.length ? ` · le plus de temps perdu en <b>${worstCorner()}</b>` : ''}${gens ? ` · génération ${gens}` : ''}.`;
   const pill = $('status');
   pill.className = 'status' + (S.running ? ' on' : '');
   pill.querySelector('span')!.textContent = S.running ? 'Entraînement en cours' : 'En pause';
@@ -205,6 +215,7 @@ function updateMeta(): void {
     ['Tour parfait visé', Number.isFinite(c.targetLap) ? fmtLap(c.targetLap) : 'pas de donnée'],
     ['Circuit', `${DEF.name}, ${fr(track.L)} m${DEF.direction ? `, sens ${DEF.direction}` : ''}`],
     ['Longueur officielle', DEF.lengthSource ?? 'tracé OSM'],
+    ['Décor', THEME.caption],
   ];
   $('kart-meta').innerHTML = rows.map(([a, b, w]) => `<div><dt>${a}</dt><dd${w ? ' class="warn"' : ''}>${b}</dd></div>`).join('');
   ($('mylap') as HTMLInputElement).value = Number.isFinite(c.targetLap) ? fmtLap(c.targetLap) : '';
@@ -551,10 +562,13 @@ function renderSheet(): void {
     .map((r, i) => {
       const brake = r.brakeDist > 0 ? `<span class="bar" style="width:${Math.round((r.brakeDist / maxB) * 48)}px"></span>${Math.round(r.brakeDist)} m` : '<span class="pos">sans frein</span>';
       const place = r.apexFromInside >= 0 ? `${fr(r.apexFromInside, 1)} m du bord intérieur` : `vibreur intérieur (${fr(-r.apexFromInside, 1)} m)`;
+      const trail = Number.isFinite(r.trail) ? `${Math.round(r.trail * 100)} %<small> · ${Math.round(r.brakePeak * 100)} %</small>` : '–';
+      const bal = Math.abs(r.steerExcess) < 1 ? 'neutre' : r.steerExcess > 0 ? `sous-vire ${fr(r.steerExcess, 0)}°` : `survire ${fr(-r.steerExcess, 0)}°`;
+      const steer = `<span class="${r.drift > 10 || Math.abs(r.steerExcess) >= 3 ? 'neg' : ''}">${bal}</span><small> · ${fr(r.drift, 0)}°</small>`;
       const g = S.ghostSheet[i];
       const dt = g ? r.sectorTime - g.sectorTime : NaN;
       const delta = Number.isFinite(dt) ? `<span class="${dt <= 0 ? 'pos' : 'neg'}">${dt <= 0 ? '−' : '+'}${fr(Math.abs(dt), 2)} s</span>` : '';
-      return `<tr data-i="${i}"${i === S.selCorner ? ' class="sel"' : ''}><td class="nm">${r.name}</td><td class="kind"><span class="dir">${r.dir}</span>${r.kind} · ${Math.round(r.angle)}°</td><td class="num">${brake}</td><td class="num">${kmh(r.vEntry)} km/h</td><td class="num">${kmh(r.vApex)} km/h</td><td class="num">${kmh(r.vExit)} km/h</td><td class="num">${fr(r.latG, 2)} g</td><td class="num">${place}</td><td class="num">${delta}</td></tr>`;
+      return `<tr data-i="${i}"${i === S.selCorner ? ' class="sel"' : ''}><td class="nm">${r.name}</td><td class="kind"><span class="dir">${r.dir}</span>${r.kind} · ${Math.round(r.angle)}°</td><td class="num">${brake}</td><td class="num">${kmh(r.vEntry)} km/h</td><td class="num">${kmh(r.vApex)} km/h</td><td class="num">${kmh(r.vExit)} km/h</td><td class="num">${fr(r.latG, 2)} g</td><td class="num">${place}</td><td class="num">${trail}</td><td class="num">${steer}</td><td class="num">${delta}</td></tr>`;
     })
     .join('');
 }
@@ -630,7 +644,7 @@ function hud(p: Pose | null, label: string): void {
     gctx.arc(46, 46, r, 0, 6.283);
     gctx.stroke();
   }
-  gctx.fillStyle = '#f1a33b';
+  gctx.fillStyle = THEME.accent;
   gctx.beginPath();
   gctx.arc(46 - (p.ay / G / 1.5) * R, 46 - (p.ax / G / 1.5) * R, 6, 0, 6.283);
   gctx.fill();
@@ -871,14 +885,14 @@ function drawMinimap(): void {
   const sel = S.sheet[S.selCorner];
   if (sel) {
     const i = track.corners[S.selCorner]?.iMid ?? 0;
-    ctx.strokeStyle = '#f1a33b';
+    ctx.strokeStyle = THEME.accent;
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.arc(X(track.x[i]), Y(track.y[i]), 8, 0, 6.283);
     ctx.stroke();
   }
   if (S.pose) {
-    ctx.fillStyle = '#f1a33b';
+    ctx.fillStyle = THEME.accent;
     ctx.beginPath();
     ctx.arc(X(S.pose.x), Y(S.pose.y), 4.5, 0, 6.283);
     ctx.fill();

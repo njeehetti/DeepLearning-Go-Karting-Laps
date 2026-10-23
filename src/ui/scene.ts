@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import type { TrackQuery } from '../track/query';
 import type { Pose } from '../ai/record';
+import { skylineCanvas, themeOf, type PlaceTheme } from './themes';
 
 export type CamMode = 'onboard' | 'chase' | 'heli' | 'free';
 
@@ -91,6 +92,8 @@ export class Scene3D {
   private crowd!: THREE.InstancedMesh;
   private crowdBest!: KartModel;
   private center = new THREE.Vector3();
+  /** Skyline ring: an horizon at driver height, a wall from above, so only shown to the low cameras. */
+  private ring: THREE.Mesh | null = null;
   private orbit = { th: 0.7, ph: 0.9, r: 260 };
   private look: THREE.Vector3 | null = null;
   private chaseInit = false;
@@ -101,7 +104,7 @@ export class Scene3D {
   private readonly s3 = new THREE.Vector3(1, 1, 1);
   private readonly up = new THREE.Vector3(0, 1, 0);
 
-  constructor(private readonly canvas: HTMLCanvasElement, private readonly q: TrackQuery) {
+  constructor(private readonly canvas: HTMLCanvasElement, private readonly q: TrackQuery, private readonly theme: PlaceTheme = themeOf('lyl')) {
     let renderer: THREE.WebGLRenderer;
     try {
       renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -113,8 +116,8 @@ export class Scene3D {
     this.renderer = renderer;
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     const scene = (this.scene = new THREE.Scene());
-    scene.background = new THREE.Color(0x070b10);
-    scene.fog = new THREE.Fog(0x070b10, 120, 520);
+    scene.background = new THREE.Color(this.theme.sky[0]);
+    scene.fog = new THREE.Fog(this.theme.sky[1], 120, 520);
     (this as { cam: THREE.PerspectiveCamera }).cam = new THREE.PerspectiveCamera(60, 1, 0.05, 1600);
     scene.add(new THREE.HemisphereLight(0x5a6e88, 0x0b120d, 0.55));
     const moon = new THREE.DirectionalLight(0x8fa6c8, 0.35);
@@ -123,7 +126,7 @@ export class Scene3D {
     const sodium = new THREE.DirectionalLight(0xffc27a, 0.45);
     sodium.position.set(60, 90, -40);
     scene.add(sodium);
-    this.hero = makeKart(false, 0xf1a33b);
+    this.hero = makeKart(false, new THREE.Color(this.theme.accent).getHex());
     scene.add(this.hero.root);
     this.ghost = makeKart(true, 0);
     this.ghost.root.visible = false;
@@ -132,7 +135,7 @@ export class Scene3D {
     this.crowd.count = 0;
     this.crowd.frustumCulled = false;
     scene.add(this.crowd);
-    this.crowdBest = makeKart(false, 0xf1a33b);
+    this.crowdBest = makeKart(false, new THREE.Color(this.theme.accent).getHex());
     this.crowdBest.root.visible = false;
     scene.add(this.crowdBest.root);
     this.buildTrack();
@@ -191,7 +194,7 @@ export class Scene3D {
     const gcol = new Float32Array(gpos.count * 3);
     const rnd = mulberry(5);
     for (let v = 0; v < gpos.count; v++) {
-      const c = sodium(light(gpos.getX(v), -gpos.getZ(v)), [0.12 + rnd() * 0.02, 0.2 + rnd() * 0.03, 0.13]);
+      const c = sodium(light(gpos.getX(v), -gpos.getZ(v)), [this.theme.grass[0] + rnd() * 0.02, this.theme.grass[1] + rnd() * 0.03, this.theme.grass[2]]);
       gcol.set(c, v * 3);
     }
     gg.setAttribute('color', new THREE.BufferAttribute(gcol, 3));
@@ -300,7 +303,8 @@ export class Scene3D {
     // dark tree line
     const trees: THREE.Vector3[] = [];
     const r = mulberry(7);
-    for (let k = 0; k < 3000 && trees.length < 320; k++) {
+    const nTrees = Math.round(320 * this.theme.treeDensity);
+    for (let k = 0; k < 3000 * this.theme.treeDensity + 3000 && trees.length < nTrees; k++) {
       const tx = x0 - 90 + r() * (x1 - x0 + 180);
       const ty = y0 - 90 + r() * (y1 - y0 + 180);
       let ok = true;
@@ -313,7 +317,7 @@ export class Scene3D {
       this.m4.makeScale(p.z, p.z, p.z);
       this.m4.setPosition(p.x, 3.5 * p.z, -p.y);
       cone.setMatrixAt(k, this.m4);
-      tc.setRGB(...sodium(light(p.x, p.y), [0.05 + r() * 0.03, 0.11 + r() * 0.05, 0.07]));
+      tc.setRGB(...sodium(light(p.x, p.y), [this.theme.trees[0] + r() * 0.03, this.theme.trees[1] + r() * 0.05, this.theme.trees[2]]));
       cone.setColorAt(k, tc);
     });
     grp.add(cone);
@@ -321,7 +325,47 @@ export class Scene3D {
     this.center.set(cx, 0, -cy);
     this.orbit.r = Math.max(x1 - x0, y1 - y0) * 1.1;
     // the overview must stay out of the fog on long circuits
-    this.scene.fog = new THREE.Fog(0x070b10, 120, Math.max(520, this.orbit.r * 1.9));
+    const far = Math.max(520, this.orbit.r * 1.9);
+    this.scene.fog = new THREE.Fog(this.theme.sky[1], 120, far);
+    this.ring = this.horizon(cx, cy, far * 0.9);
+    this.scene.add(this.ring);
+  }
+
+  /** The place's skyline on a ring around the circuit: sky gradient, then the silhouette, out of the fog. */
+  private horizon(cx: number, cy: number, R: number): THREE.Mesh {
+    const W = 2048;
+    const H = 256;
+    const cv = document.createElement('canvas');
+    cv.width = W;
+    cv.height = H;
+    const c = cv.getContext('2d')!;
+    const g = c.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, this.theme.sky[0]);
+    g.addColorStop(1, this.theme.sky[1]);
+    c.fillStyle = g;
+    c.fillRect(0, 0, W, H);
+    // a low glow in the place's colour, so the silhouette reads against the night
+    const glow = c.createLinearGradient(0, H * 0.35, 0, H);
+    glow.addColorStop(0, 'rgba(0,0,0,0)');
+    glow.addColorStop(1, this.theme.accent);
+    c.globalAlpha = 0.28;
+    c.fillStyle = glow;
+    c.fillRect(0, 0, W, H);
+    c.globalAlpha = 1;
+    // the skyline twice around the ring, each copy half the canvas wide
+    const sil = skylineCanvas(this.theme, W / 2, Math.round(H * 0.62), '#06070a');
+    c.drawImage(sil, 0, H - sil.height);
+    c.drawImage(sil, W / 2, H - sil.height);
+    const tex = new THREE.CanvasTexture(cv);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.repeat.set(2, 1);
+    const h = R * 0.16;
+    const geo = new THREE.CylinderGeometry(R, R, h, 96, 1, true);
+    const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: tex, side: THREE.BackSide, fog: false, depthWrite: false }));
+    mesh.position.set(cx, h / 2 - 3, -cy);
+    mesh.renderOrder = -1;
+    return mesh;
   }
 
   /** Race line of the best lap, coloured by speed. */
@@ -443,6 +487,7 @@ export class Scene3D {
       cam.lookAt(this.center);
     }
     cam.updateProjectionMatrix();
+    if (this.ring) this.ring.visible = !!target && (this.mode === 'onboard' || this.mode === 'chase');
     this.renderer.render(this.scene, cam);
   }
 

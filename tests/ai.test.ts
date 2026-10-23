@@ -18,10 +18,10 @@ const world: WorldSpec = {
 
 describe('réseau', () => {
   it('a 18 entrées (braquage compris) et 3 sorties', () => {
-    expect(DRIVER_SHAPE.sizes).toEqual([18, 16, 3]);
-    expect(N_OBS).toBe(18);
-    expect(paramCount(DRIVER_SHAPE)).toBe(16 * 19 + 3 * 17);
-    const out = new Mlp().forward(new Float64Array(paramCount(DRIVER_SHAPE)).fill(0.1), new Float64Array(18).fill(0.5));
+    expect(DRIVER_SHAPE.sizes).toEqual([22, 16, 3]);
+    expect(N_OBS).toBe(22);
+    expect(paramCount(DRIVER_SHAPE)).toBe(16 * 23 + 3 * 17);
+    const out = new Mlp().forward(new Float64Array(paramCount(DRIVER_SHAPE)).fill(0.1), new Float64Array(22).fill(0.5));
     expect(out).toHaveLength(3);
     expect(Number.isFinite(out[0])).toBe(true);
   });
@@ -68,9 +68,9 @@ describe('épisode', () => {
     // steering output driven by the "Braquage" input with a large negative gain: a self-sustained saw
     const saw = new Float64Array(n);
     const calm = new Float64Array(n);
-    const hid = 16 * 19;
+    const hid = 16 * (N_OBS + 1);
     saw[14] = -8; // hidden 0 ← input 14 (wheel angle)
-    saw[18] = 0.3;
+    saw[N_OBS] = 0.3; // hidden 0 bias
     saw[hid + 0] = 6; // steer ← hidden 0
     const a = ev.episode(saw, spec);
     const b = ev.episode(calm, spec);
