@@ -20,6 +20,8 @@ export interface TrainConfig {
   /** Lap length (m) and start-speed function, provided by the caller's World. */
   L: number;
   startSpeed: (s: number) => number;
+  /** Same for the extra circuits of a generalist training (world.others, in order). */
+  others?: { L: number; startSpeed: (s: number) => number }[];
 }
 
 export interface GenStats {
@@ -50,7 +52,7 @@ export interface Brain {
 }
 
 export class Trainer {
-  readonly cfg: Required<Omit<TrainConfig, 'world' | 'L' | 'startSpeed' | 'x0'>> & TrainConfig;
+  readonly cfg: Required<Omit<TrainConfig, 'world' | 'L' | 'startSpeed' | 'x0' | 'others'>> & TrainConfig;
   readonly es: SepCmaEs;
   readonly pool: EvalPool;
   readonly history: GenStats[] = [];
@@ -61,7 +63,7 @@ export class Trainer {
   private timeWeight = 0;
 
   constructor(pool: EvalPool, cfg: TrainConfig) {
-    this.cfg = { lambda: 256, sigma0: 0.5, seed: 1, randomStarts: 1, maxTime: 150, ...cfg };
+    this.cfg = { lambda: 256, sigma0: 0.5, seed: 1, randomStarts: cfg.others?.length ? 3 : 1, maxTime: 150, ...cfg };
     this.pool = pool;
     this.es = new SepCmaEs(paramCount(DRIVER_SHAPE), { lambda: this.cfg.lambda, sigma0: this.cfg.sigma0, seed: this.cfg.seed, x0: this.cfg.x0 });
   }
@@ -70,9 +72,13 @@ export class Trainer {
   episodes(gen: number): EpisodeSpec[] {
     const r = mulberry32((this.cfg.seed * 7919 + gen) >>> 0);
     const eps: EpisodeSpec[] = [{ s0: 0, d0: 0, v0: this.cfg.startSpeed(0), maxTime: this.cfg.maxTime, timeWeight: this.timeWeight }];
+    const circuits = [{ L: this.cfg.L, startSpeed: this.cfg.startSpeed }, ...(this.cfg.others ?? [])];
     for (let k = 0; k < this.cfg.randomStarts; k++) {
-      const s0 = r() * this.cfg.L;
-      eps.push({ s0, d0: 0, v0: this.cfg.startSpeed(s0), maxTime: this.cfg.maxTime, timeWeight: this.timeWeight });
+      // generalist: each extra start is on a circuit drawn at random (the same for every candidate)
+      const track = circuits.length > 1 ? Math.floor(r() * circuits.length) : 0;
+      const c = circuits[track];
+      const s0 = r() * c.L;
+      eps.push({ s0, d0: 0, v0: c.startSpeed(s0), maxTime: this.cfg.maxTime, timeWeight: this.timeWeight, track });
     }
     return eps;
   }

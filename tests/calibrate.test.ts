@@ -4,6 +4,7 @@ import { buildTrack } from '../src/track/build';
 import type { TrackDef } from '../src/track/types';
 import { calibrate, paramsOf, theoreticalLap } from '../src/sim/calibrate';
 import { DEFAULT_CALIBRATION } from '../src/sim/defaults';
+import { WEATHER_IDS } from '../src/sim/weather';
 
 const track = buildTrack(lyl as TrackDef, { scale: 'official' });
 
@@ -32,4 +33,19 @@ describe('calage', () => {
     const { T } = theoreticalLap(track, paramsOf(DEFAULT_CALIBRATION.k270), 400);
     expect(Math.abs(T - 91.5)).toBeLessThan(1);
   }, 60_000);
+});
+
+describe('météo', () => {
+  it('ralentit le tour parfait dans l’ordre sec < piste grasse < humide < pluie, et coupe l’adhérence des vibreurs', () => {
+    const c = DEFAULT_CALIBRATION.k270;
+    const laps = WEATHER_IDS.map((weather) => theoreticalLap(track, paramsOf({ ...c, weather }), 120).T);
+    for (let k = 1; k < laps.length; k++) expect(laps[k]).toBeGreaterThan(laps[k - 1] + 1);
+    // rain on slicks: a lap time in the range seen in rental karts in the wet (+15 % to +35 %)
+    expect(laps[3] / laps[0]).toBeGreaterThan(1.15);
+    expect(laps[3] / laps[0]).toBeLessThan(1.35);
+    const dry = paramsOf(c);
+    const wet = paramsOf({ ...c, weather: 'pluie' });
+    expect(wet.kerbGrip / dry.kerbGrip).toBeLessThan(wet.mu / dry.mu);
+    expect(wet.brakeMax).toBe(dry.brakeMax);
+  }, 120_000);
 });

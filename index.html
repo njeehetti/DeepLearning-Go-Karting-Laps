@@ -37,6 +37,7 @@
           </div>
           <div class="title-actions">
             <select id="track-sel" class="track-sel" aria-label="Circuit"></select>
+            <select id="weather-sel" class="weather-sel" aria-label="Météo"></select>
             <div class="tabs" role="group" aria-label="Kart">
               <button id="k270" aria-pressed="true">270cc</button>
               <button id="k390" aria-pressed="false">390cc</button>
@@ -90,6 +91,12 @@
                 </select>
                 <input type="range" id="scrub" min="0" max="1000" value="0" aria-label="Position dans le tour" />
               </div>
+              <div class="playbar daybar">
+                <label for="hour">Heure</label>
+                <input type="range" id="hour" min="0" max="24" step="0.25" value="21" aria-describedby="hour-v" />
+                <b class="num" id="hour-v">21:00</b>
+                <span class="note" id="weather-note"></span>
+              </div>
             </section>
 
             <aside class="panel tower" aria-label="Chronométrage">
@@ -141,6 +148,15 @@
 
         <section class="view" data-view="analyse" hidden>
           <div class="grid3">
+            <section class="panel span3" aria-labelledby="h-weather">
+              <div class="panel-h"><h2 id="h-weather">Selon la météo</h2><span class="meta">Tour parfait et meilleur tour IA dans chaque condition, écart au sec</span></div>
+              <div class="tablewrap">
+                <table class="weather-table">
+                  <thead><tr><th>Conditions</th><th class="num">Tour parfait</th><th class="num">Écart</th><th class="num">Meilleur tour IA</th><th class="num">Écart</th><th>Ce qui change</th></tr></thead>
+                  <tbody id="weather-rows"></tbody>
+                </table>
+              </div>
+            </section>
             <section class="panel span3" aria-labelledby="h-tel">
               <div class="panel-h"><h2 id="h-tel">Télémétrie du meilleur tour</h2><span class="meta" id="tel-read">Survole pour lire, clique pour rejouer à cet endroit</span></div>
               <div class="chart tall"><canvas id="tel"></canvas></div>

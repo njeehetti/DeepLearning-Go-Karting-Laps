@@ -3,6 +3,7 @@ import { buildTrack } from '../track/build';
 import { TrackQuery } from '../track/query';
 import type { TrackDef, TrackScale } from '../track/types';
 import { paramsOf, type Calibration } from '../sim/calibrate';
+import type { Weather } from '../sim/weather';
 import { KartSim, KartState } from '../sim/kart';
 import { LineEvaluator } from '../sim/qss';
 import { makeQss2Ideal, solveQss2 } from '../sim/qss2';
@@ -10,13 +11,16 @@ import { Pilot, runEpisode, type EpisodeResult, type EpisodeSpec } from './episo
 import { sampleCandidate, type SampleSpec } from './es';
 import { DRIVER_SHAPE, paramCount } from './mlp';
 
-export type KartSetup = Pick<Calibration, 'kartId' | 'mu' | 'powerScale' | 'vTopKmh' | 'transmission' | 'driver'>;
+/** A calibrated kart and the track conditions it runs in. */
+export type KartSetup = Pick<Calibration, 'kartId' | 'mu' | 'powerScale' | 'vTopKmh' | 'transmission' | 'driver'> & { weather?: Weather };
 
 export interface WorldSpec {
   track: TrackDef;
   scale: TrackScale;
   width?: number;
   kart: KartSetup;
+  /** More circuits driven by the same brain (generalist training); episodes pick one with `track`. */
+  others?: TrackDef[];
 }
 
 export interface CandidateResult {
@@ -76,15 +80,25 @@ export class Evaluator {
   private readonly x: Float64Array;
   private readonly z: Float64Array;
 
-  constructor(world: World) {
+  /** The main world first, then the extra circuits of a generalist training. */
+  readonly worlds: World[];
+
+  constructor(world: World, others: World[] = []) {
     this.world = world;
+    this.worlds = [world, ...others];
     this.pilot.profile = world.profile;
     this.x = new Float64Array(world.dim);
     this.z = new Float64Array(world.dim);
   }
 
+  private worldOf(spec: EpisodeSpec): World {
+    const w = this.worlds[spec.track ?? 0] ?? this.world;
+    this.pilot.profile = w.profile;
+    return w;
+  }
+
   episode(params: ArrayLike<number>, spec: EpisodeSpec): EpisodeResult {
-    return runEpisode(this.world.sim, this.pilot, params, spec, this.st);
+    return runEpisode(this.worldOf(spec).sim, this.pilot, params, spec, this.st);
   }
 
   candidate(job: GenJob, i: number): CandidateResult {
@@ -102,7 +116,7 @@ export class Evaluator {
       let r: EpisodeResult;
       if (e === 0 && i < (job.recordN ?? 0)) {
         const buf: number[] = [];
-        r = runEpisode(this.world.sim, this.pilot, this.x, spec, this.st, (st, _inp, decided) => {
+        r = runEpisode(this.worldOf(spec).sim, this.pilot, this.x, spec, this.st, (st, _inp, decided) => {
           if (decided && Math.round(st.t * 30) % 3 === 0) buf.push(st.x, st.y, st.psi, st.thr, st.brk);
         });
         traj = Float32Array.from(buf);
@@ -138,7 +152,7 @@ export function makeHandler(post: (m: FromWorker) => void): (m: ToWorker) => voi
   return (m) => {
     try {
       if (m.type === 'init') {
-        ev = new Evaluator(new World(m.world));
+        ev = new Evaluator(new World(m.world), (m.world.others ?? []).map((track) => new World({ ...m.world, track, others: undefined })));
         post({ type: 'ready' });
       } else if (m.type === 'job') {
         if (!ev) throw new Error('worker non initialisé');

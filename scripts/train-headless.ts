@@ -1,13 +1,17 @@
 // Headless training benchmark (criteria 1 and 2): npx tsx scripts/train-headless.ts [--kart k270]
 // [--track lyl] [--minutes 10] [--lambda 256] [--workers N] [--seed 1] [--out out/brains]
+// Generalist: --others all (or genk,pfi,…) also drives the other circuits. --x0 <brain.json> resumes a brain.
+// --eval <brain.json> only measures a brain on every circuit. --weather sec|gras|humide|pluie sets the conditions.
 import { availableParallelism } from 'node:os';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { Worker } from 'node:worker_threads';
 import type { TrackDef } from '../src/track/types';
+import type { Weather } from '../src/sim/weather';
 import { DEFAULT_CALIBRATION } from '../src/sim/defaults';
 import { World, type FromWorker, type WorldSpec } from '../src/ai/evalCore';
 import { WorkerPool, type WorkerLike } from '../src/ai/pool';
 import { Trainer } from '../src/ai/trainer';
+import { Pilot, runEpisode } from '../src/ai/episode';
 
 const arg = (k: string, d: string) => {
   const i = process.argv.indexOf('--' + k);
@@ -20,14 +24,42 @@ const nWorkers = parseInt(arg('workers', String(Math.max(1, availableParallelism
 const seed = parseInt(arg('seed', '1'), 10);
 const outDir = arg('out', 'out/brains');
 const trackId = arg('track', 'lyl');
-const def = JSON.parse(readFileSync(new URL(`../data/tracks/${trackId}.json`, import.meta.url), 'utf8')) as TrackDef;
+const loadTrack = (id: string) => JSON.parse(readFileSync(new URL(`../data/tracks/${id}.json`, import.meta.url), 'utf8')) as TrackDef;
+const allIds = readdirSync(new URL('../data/tracks/', import.meta.url)).filter((f) => f.endsWith('.json')).map((f) => f.slice(0, -5));
+const def = loadTrack(trackId);
+const othersArg = arg('others', '');
+const otherIds = othersArg === 'all' ? allIds.filter((id) => id !== trackId) : othersArg ? othersArg.split(',') : [];
+const readBrain = (f: string): number[] => {
+  const o = JSON.parse(readFileSync(f, 'utf8'));
+  return (o.brain ?? o).params;
+};
+const fmt = (T: number) => (Number.isFinite(T) ? `${Math.floor(T / 60)}:${(T % 60).toFixed(2).padStart(5, '0')}` : '–');
 
 const c = DEFAULT_CALIBRATION[kartId];
 const world: WorldSpec = {
   track: def, scale: 'official',
-  kart: { kartId, mu: c.mu, powerScale: c.powerScale, vTopKmh: c.vTopKmh, transmission: c.transmission, driver: c.driver },
+  kart: { kartId, mu: c.mu, powerScale: c.powerScale, vTopKmh: c.vTopKmh, transmission: c.transmission, driver: c.driver, weather: arg('weather', 'sec') as Weather },
+  ...(otherIds.length ? { others: otherIds.map(loadTrack) } : {}),
 };
 const local = new World(world);
+
+/** A flying lap from the start line of every circuit: lap time and whether it stayed on the track. */
+function evalAll(params: ArrayLike<number>): void {
+  for (const id of allIds) {
+    const w = new World({ ...world, track: loadTrack(id), others: undefined });
+    const pilot = new Pilot();
+    pilot.profile = w.profile;
+    const r = runEpisode(w.sim, pilot, params, { s0: 0, d0: 0, v0: w.startSpeed(0), maxTime: 200, timeWeight: 1 });
+    console.log(`  ${id.padEnd(13)} ${r.completed ? fmt(r.lapTime) : 'non bouclé (' + r.end + ', ' + r.progress.toFixed(0) + ' m)'}${r.completed && !r.clean ? ' (herbe)' : ''}`);
+  }
+}
+const evalFile = arg('eval', '');
+if (evalFile) {
+  console.log('Tour lancé sur chaque circuit :');
+  evalAll(readBrain(evalFile));
+  process.exit(0);
+}
+const x0File = arg('x0', '');
 
 const workers: WorkerLike[] = Array.from({ length: nWorkers }, () => {
   const w = new Worker(new URL('../src/ai/node.worker.ts', import.meta.url), { execArgv: ['--import', 'tsx'] });
@@ -39,9 +71,13 @@ const workers: WorkerLike[] = Array.from({ length: nWorkers }, () => {
 });
 const pool = new WorkerPool(workers);
 await pool.init(world);
-const trainer = new Trainer(pool, { world, lambda, seed, L: local.q.L, startSpeed: (s) => local.startSpeed(s) });
+const otherWorlds = (world.others ?? []).map((track) => new World({ ...world, track, others: undefined }));
+const trainer = new Trainer(pool, {
+  world, lambda, seed, L: local.q.L, startSpeed: (s) => local.startSpeed(s),
+  others: otherWorlds.map((w) => ({ L: w.q.L, startSpeed: (s: number) => w.startSpeed(s) })),
+  ...(x0File ? { x0: readBrain(x0File) } : {}),
+});
 
-const fmt = (T: number) => (Number.isFinite(T) ? `${Math.floor(T / 60)}:${(T % 60).toFixed(2).padStart(5, '0')}` : '–');
 console.log(`Entraînement ${kartId}, λ=${lambda}, ${nWorkers} workers, ${minutes} min, tour théorique ${fmt(c.lap)}`);
 const t0 = performance.now();
 let firstLap = -1;
@@ -61,10 +97,20 @@ while ((performance.now() - t0) / 60000 < minutes) {
 }
 console.log(`Premier tour bouclé : ${firstLap < 0 ? 'jamais' : firstLap.toFixed(0) + ' s'} ; premier tour propre : ${firstClean < 0 ? 'jamais' : firstClean.toFixed(0) + ' s'} ; meilleur ${fmt(trainer.best?.lap ?? NaN)}`);
 const brain = trainer.brain();
+// generalist: the best start-line lap only speaks for the main circuit; the population mean is the driver
+// that learnt all of them
+if (brain && otherIds.length) {
+  brain.params = Array.from(trainer.es.m);
+  brain.track = 'generaliste';
+}
 if (brain) {
   mkdirSync(outDir, { recursive: true });
   const file = `${outDir}/${brain.track}-${kartId}-${Date.now()}.json`;
   writeFileSync(file, JSON.stringify({ brain, history: trainer.history }));
   console.log('Cerveau sauvegardé :', file);
+  if (otherIds.length) {
+    console.log('Tour lancé sur chaque circuit :');
+    evalAll(brain.params);
+  }
 }
 pool.close();

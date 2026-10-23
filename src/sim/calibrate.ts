@@ -10,6 +10,7 @@ import { LineGA } from './lineGA';
 import { LineEvaluator, lineLimits } from './qss';
 import { makeQss2Ideal, solveQss2 } from './qss2';
 import { TrackQuery } from '../track/query';
+import { withWeather, type Weather } from './weather';
 
 export type CalibrationMode =
   /** keep µ, fit engine power */
@@ -48,8 +49,9 @@ export interface CalibrationInput {
   lineGens?: number;
 }
 
-export function paramsOf(c: Pick<Calibration, 'kartId' | 'mu' | 'powerScale' | 'vTopKmh' | 'transmission' | 'driver'>): ChassisParams {
-  return chassisParams(c.kartId, { mu: c.mu, powerScale: c.powerScale, vTopKmh: c.vTopKmh, transmission: c.transmission, driver: c.driver });
+/** Chassis parameters of a calibrated kart, in the given track conditions (dry by default). */
+export function paramsOf(c: Pick<Calibration, 'kartId' | 'mu' | 'powerScale' | 'vTopKmh' | 'transmission' | 'driver'> & { weather?: Weather }): ChassisParams {
+  return withWeather(chassisParams(c.kartId, { mu: c.mu, powerScale: c.powerScale, vTopKmh: c.vTopKmh, transmission: c.transmission, driver: c.driver }), c.weather);
 }
 
 /** Optimises a racing line for params p; returns the genes and the theoretical lap. */

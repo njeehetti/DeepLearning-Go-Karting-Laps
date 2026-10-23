@@ -18,6 +18,8 @@ export interface EpisodeSpec {
   maxTime: number;
   /** Weight of the lap time in the fitness (curriculum: 0 = just finish the lap). */
   timeWeight: number;
+  /** Circuit of the episode for multi-circuit training (index in the evaluator's worlds, 0 = main). */
+  track?: number;
 }
 
 export type EndReason = 'tour' | 'mur' | 'herbe' | 'immobile' | 'contresens' | 'temps';

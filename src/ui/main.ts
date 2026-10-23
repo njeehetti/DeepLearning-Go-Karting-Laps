@@ -18,6 +18,7 @@ import { drawEvo, drawTel, fmtLap, type TelGeom } from './charts';
 import { NnView } from './nnview';
 import { Scene3D, type CamMode } from './scene';
 import { applyTheme, skylineCanvas, themeOf } from './themes';
+import { WEATHERS, WEATHER_IDS, type Weather } from '../sim/weather';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const SCALE = 'official' as const;
@@ -64,7 +65,9 @@ applyTheme(THEME);
   host.appendChild(sky);
 }
 // v3: 22-input network (braking need, speed margin, acceleration, brake pedal); older brains are ignored
-const brainKey = (k: KartId) => `brain3:${DEF.id}:${k}:${SCALE}`;
+const brainKey = (k: KartId, w: Weather = S.weather) => `brain3:${DEF.id}:${k}:${SCALE}${w === 'sec' ? '' : ':' + w}`;
+/** Theoretical laps are cached per kart and track conditions. */
+const thKey = (k: KartId, w: Weather = S.weather) => `${k}:${w}`;
 // grip and power belong to the kart, not to the circuit (the LYL key is the pre-multi-circuit one)
 const calibKey = (k: KartId) => `calib:kart:${k}`;
 const recordKey = (k: KartId) => `record:${DEF.id}:${k}`;
@@ -78,6 +81,7 @@ function myRecord(k: KartId): number {
 // ---------- state ----------
 const S = {
   kartId: (LS.get<KartId>('kart') ?? 'k270') as KartId,
+  weather: (WEATHERS[LS.get<Weather>('weather') ?? 'sec'] ? LS.get<Weather>('weather') ?? 'sec' : 'sec') as Weather,
   pop: LS.get<number>('pop') ?? 256,
   running: false,
   trainer: null as Trainer | null,
@@ -122,9 +126,9 @@ const S = {
 function calibOf(k: KartId): Calibration {
   return LS.get<Calibration>(calibKey(k)) ?? LS.get<Calibration>(`calib:lyl:${k}`) ?? DEFAULT_CALIBRATION[k];
 }
-function worldOf(k: KartId): WorldSpec {
+function worldOf(k: KartId, weather: Weather = S.weather): WorldSpec {
   const c = calibOf(k);
-  return { track: DEF, scale: SCALE, kart: { kartId: k, mu: c.mu, powerScale: c.powerScale, vTopKmh: c.vTopKmh, transmission: c.transmission, driver: c.driver } };
+  return { track: DEF, scale: SCALE, kart: { kartId: k, mu: c.mu, powerScale: c.powerScale, vTopKmh: c.vTopKmh, transmission: c.transmission, driver: c.driver, weather } };
 }
 
 // ---------- workers ----------
@@ -155,6 +159,23 @@ function ask(req: DistOmit<ToolRequest, 'id'>): Promise<ToolResponse> {
 
 // ---------- 3D ----------
 const scene = new Scene3D($<HTMLCanvasElement>('c3d'), q, THEME);
+scene.setWeather(S.weather);
+$('weather-note').textContent = S.weather === 'sec' ? '' : WEATHERS[S.weather].note;
+// time of day: looks only, the physics ignores it
+{
+  const el = $<HTMLInputElement>('hour');
+  const show = (h: number) => {
+    $('hour-v').textContent = `${String(Math.floor(h) % 24).padStart(2, '0')}:${String(Math.round((h % 1) * 60)).padStart(2, '0')}`;
+    scene.setTime(h);
+  };
+  el.value = String(LS.get<number>('hour') ?? 21);
+  show(parseFloat(el.value));
+  el.addEventListener('input', () => {
+    const h = parseFloat(el.value);
+    LS.set('hour', h);
+    show(h);
+  });
+}
 if (!scene.ok) $('no3d').hidden = false;
 new ResizeObserver(() => {
   const r = $('view3d').getBoundingClientRect();
@@ -164,10 +185,11 @@ const nn = new NnView($('nn'));
 
 // ---------- header / meta ----------
 function updateHeader(): void {
-  $('t-kart').textContent = KARTS[S.kartId].label;
+  $('t-kart').textContent = KARTS[S.kartId].label + (S.weather === 'sec' ? '' : ` · ${WEATHERS[S.weather].label.toLowerCase()}`);
+  void renderWeather();
   const best = S.best?.lap ?? NaN;
   $('t-best').textContent = fmtLap(best);
-  const th = S.theory.get(S.kartId);
+  const th = S.theory.get(thKey(S.kartId));
   $('t-theory').textContent = th ? fmtLap(th.lap) : '…';
   const you = myRecord(S.kartId);
   $('t-you').textContent = fmtLap(you);
@@ -226,12 +248,12 @@ function updateMeta(): void {
 }
 
 // ---------- best brain, replay, ghosts ----------
-async function loadTheory(k: KartId): Promise<void> {
-  if (S.theory.has(k)) return;
-  const r = await ask({ type: 'theory', world: worldOf(k), gens: 300 });
+async function loadTheory(k: KartId, w: Weather = S.weather): Promise<void> {
+  if (S.theory.has(thKey(k, w))) return;
+  const r = await ask({ type: 'theory', world: worldOf(k, w), gens: 300 });
   if (r.type === 'theory') {
-    S.theory.set(k, { lap: r.lap, run: r.run });
-    if (k === S.kartId) S.theorySheet = cornerSheet(track, r.run);
+    S.theory.set(thKey(k, w), { lap: r.lap, run: r.run });
+    if (k === S.kartId && w === S.weather) S.theorySheet = cornerSheet(track, r.run);
     renderStrip();
   }
   updateHeader();
@@ -244,7 +266,12 @@ async function setBest(brain: Brain | null): Promise<void> {
   updateHeader();
   nn.setParams(brain ? brain.params : null);
   if (!brain) {
+    // nothing trained for this kart / circuit / condition yet: clear the replay, the line and the HUD
     S.run = null;
+    S.sheet = [];
+    scene.setLine([], [], [], () => [0, 0, 0], 0);
+    scene.setHero(null);
+    hud(null, '–');
     renderSheet();
     return;
   }
@@ -263,7 +290,7 @@ async function refreshGhost(): Promise<void> {
   S.ghost = null;
   S.ghostLabel = '';
   if (S.ghostMode === 'theory') {
-    const th = S.theory.get(S.kartId);
+    const th = S.theory.get(thKey(S.kartId));
     if (th) {
       S.ghost = th.run;
       S.ghostLabel = `Tour théorique ${fmtLap(th.lap)}`;
@@ -323,7 +350,8 @@ async function ensureTrainer(fresh = false): Promise<Trainer> {
     S.poolWorld = JSON.stringify(world.kart);
   }
   if (!S.trainer || fresh || (S.trainer as Trainer & { key?: string }).key !== key) {
-    const stored = fresh ? null : LS.get<Brain>(brainKey(S.kartId));
+    // a new condition starts from the dry driver: it already knows the circuit, it only has to find the grip
+    const stored = fresh ? null : LS.get<Brain>(brainKey(S.kartId)) ?? LS.get<Brain>(brainKey(S.kartId, 'sec'));
     // same rolling start as the replay recorder (tool worker), so a recorded lap reproduces the trained one
     const local = new World(world);
     const startSpeed = (s: number) => local.startSpeed(s);
@@ -390,7 +418,7 @@ function onGen(tr: Trainer, s: GenStats): void {
 }
 function drawEvoNow(): void {
   if (!S.trainer) return;
-  $('evo-read').textContent = drawEvo($<HTMLCanvasElement>('evo'), S.trainer.history, S.theory.get(S.kartId)?.lap ?? NaN);
+  $('evo-read').textContent = drawEvo($<HTMLCanvasElement>('evo'), S.trainer.history, S.theory.get(thKey(S.kartId))?.lap ?? NaN);
 }
 
 // ---------- controls ----------
@@ -428,6 +456,48 @@ async function setKart(k: KartId): Promise<void> {
   void refreshGhost();
 }
 $('k270').addEventListener('click', () => void setKart('k270'));
+
+async function setWeather(w: Weather): Promise<void> {
+  if (w === S.weather) return;
+  S.running = false;
+  S.weather = w;
+  LS.set('weather', w);
+  S.trainer = null;
+  scene.setWeather(w);
+  $('weather-note').textContent = w === 'sec' ? '' : WEATHERS[w].note;
+  updateHeader();
+  await setBest(LS.get<Brain>(brainKey(S.kartId)));
+  void loadTheory(S.kartId);
+  void refreshGhost();
+  renderWeather();
+}
+{
+  const sel = $<HTMLSelectElement>('weather-sel');
+  sel.innerHTML = WEATHER_IDS.map((w) => `<option value="${w}"${w === S.weather ? ' selected' : ''}>${WEATHERS[w].label}</option>`).join('');
+  sel.addEventListener('change', () => void setWeather(sel.value as Weather));
+}
+
+// ---------- weather table: theoretical and AI laps in every condition ----------
+let weatherBusy = false;
+async function renderWeather(compute = false): Promise<void> {
+  const tb = $('weather-rows');
+  const dry = S.theory.get(thKey(S.kartId, 'sec'))?.lap ?? NaN;
+  const dryAi = LS.get<Brain>(brainKey(S.kartId, 'sec'))?.lap ?? NaN;
+  tb.innerHTML = WEATHER_IDS.map((w) => {
+    const th = S.theory.get(thKey(S.kartId, w))?.lap ?? NaN;
+    const ai = LS.get<Brain>(brainKey(S.kartId, w))?.lap ?? NaN;
+    const d = (a: number, b: number) => (Number.isFinite(a) && Number.isFinite(b) && w !== 'sec' ? `<span class="neg">+${fr(a - b, 2)} s</span> <small>(+${fr((a / b - 1) * 100, 0)} %)</small>` : '');
+    return `<tr${w === S.weather ? ' class="sel"' : ''}><td class="nm">${WEATHERS[w].label}</td><td class="num">${Number.isFinite(th) ? fmtLap(th) : '…'}</td><td class="num">${d(th, dry)}</td><td class="num">${Number.isFinite(ai) ? fmtLap(ai) : '<span class="faint">à entraîner</span>'}</td><td class="num">${d(ai, dryAi)}</td><td class="note-cell">${WEATHERS[w].note}</td></tr>`;
+  }).join('');
+  if (!compute || weatherBusy) return;
+  weatherBusy = true;
+  for (const w of WEATHER_IDS) {
+    if (S.theory.has(thKey(S.kartId, w))) continue;
+    await loadTheory(S.kartId, w);
+    void renderWeather();
+  }
+  weatherBusy = false;
+}
 $('k390').addEventListener('click', () => void setKart('k390'));
 
 function parseLap(s: string): number {
@@ -466,7 +536,7 @@ $('calib').addEventListener('click', async () => {
     : `Inatteignable dans ce mode : au mieux ${fmtLap(res.lap)}. Essaie un autre paramètre.`;
   S.running = false;
   S.trainer = null;
-  S.theory.delete(S.kartId);
+  for (const w of WEATHER_IDS) S.theory.delete(thKey(S.kartId, w));
   updateMeta();
   updateHeader();
   void loadTheory(S.kartId);
@@ -628,6 +698,7 @@ function hud(p: Pose | null, label: string): void {
   if (!p) {
     $('h-spd').textContent = '–';
     $('h-lap').textContent = label;
+    pedals(0, 0);
     return;
   }
   $('h-spd').textContent = String(kmh(p.v));
@@ -772,6 +843,7 @@ function tick(now: number): void {
 
 // ---------- views (icon rail) ----------
 function showView(v: string): void {
+  if (v === 'analyse') void renderWeather(true);
   if (!document.querySelector(`.view[data-view="${v}"]`)) v = 'piste';
   S.view = v;
   document.querySelectorAll<HTMLElement>('.view').forEach((el) => (el.hidden = el.dataset.view !== v));

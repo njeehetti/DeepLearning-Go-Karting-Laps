@@ -39,6 +39,12 @@
 
 Le circuit se choisit en haut de la page (ou avec `?c=genk` dans l'adresse). Chaque circuit a son habillage : couleurs du pays, et un décor dessiné d'après le lieu, en en-tête et à l'horizon de la 3D (tours Petronas vues de Kajang, pont Dunlop au Mans, chevalements de mine à Genk, Vésuve à Sarno, moulin de Heckington près de PFi…). Chaque circuit garde son meilleur cerveau et ton record, à saisir dans la vue Kart. Le kart reste un kart de location : les records publics de ces pistes, faits en karts de compétition, ne sont pas comparables.
 
+## Météo et heure
+
+La météo se choisit à côté du circuit : **sec**, **piste grasse** (poussière, huile, piste verte sans gomme), **humide** (piste qui sèche) ou **pluie**. Elle change la physique : adhérence de l'asphalte (−12 %, −25 %, −40 %), vibreurs et herbe bien plus glissants, eau qui freine les roues. Chaque condition a son propre cerveau, qui démarre du pilote du sec. La vue Analyse compare le tour parfait et le meilleur tour IA dans chaque condition ; sur le LYL en 270cc, la pluie coûte environ 16 s (+17 %) au tour parfait.
+
+Le curseur **Heure** fait passer la piste de la nuit (projecteurs au sodium) au jour, par le lever et le coucher du soleil. C'est un réglage d'affichage : la physique ne voit pas l'heure.
+
 ## Lancer
 
 ```bash
@@ -53,6 +59,9 @@ npm test           # 81 tests : physique, circuits, IA, non-régression v1, cala
 npm run test:slow  # non-régression complète de la v1 (≈ 1 min)
 npm run build      # site statique dans dist/
 npx tsx scripts/train-headless.ts --track genk --kart k270 --minutes 10   # entraînement sans interface
+npx tsx scripts/train-headless.ts --weather pluie --x0 <cerveau.json>     # sous la pluie, à partir d'un cerveau
+npx tsx scripts/train-headless.ts --others all --minutes 20               # pilote généraliste, tous les circuits
+npx tsx scripts/train-headless.ts --eval <cerveau.json>                   # tour lancé sur chaque circuit
 ```
 
 

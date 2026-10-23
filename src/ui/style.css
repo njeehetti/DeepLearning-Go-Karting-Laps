@@ -229,3 +229,15 @@ tbody tr.sel { outline: 1px solid var(--accent); outline-offset: -1px; }
   .lead-time { font-size: 30px; }
   .stage .panel-h { gap: 6px 14px; }
 }
+
+/* weather table */
+.weather-table { min-width: 760px; }
+.weather-table .note-cell { color: var(--muted); font-size: 12px; max-width: 420px; white-space: normal; }
+.weather-table small { color: var(--faint); }
+.faint { color: var(--faint); }
+
+/* time of day */
+.daybar { padding-top: 0; color: var(--muted); font-size: 12px; }
+.daybar input[type=range] { flex: 0 1 220px; min-width: 120px; }
+.daybar b { color: var(--text); font: 500 12px var(--font-data); min-width: 40px; }
+.daybar .note { margin: 0; color: var(--faint); font-size: 12px; }

@@ -4,8 +4,19 @@ import * as THREE from 'three';
 import type { TrackQuery } from '../track/query';
 import type { Pose } from '../ai/record';
 import { skylineCanvas, themeOf, type PlaceTheme } from './themes';
+import type { Weather } from '../sim/weather';
 
 export type CamMode = 'onboard' | 'chase' | 'heli' | 'free';
+
+/** What a baked colour belongs to: the track surface darkens in the wet, the rest does not. */
+type Role = 'ground' | 'road' | 'other';
+/** Baked colours of one buffer: the night one (floodlight pools) and the day one (plain albedo). */
+interface Lit {
+  attr: THREE.BufferAttribute;
+  night: Float32Array;
+  day: Float32Array;
+  role: Role;
+}
 
 /** Track coords (x east, y north, z up) → three (X, Y up, Z south). */
 const P = (x: number, y: number, z: number) => new THREE.Vector3(x, z, -y);
@@ -56,6 +67,40 @@ function makeKart(ghost: boolean, color: number): KartModel {
 }
 
 let glowTex: THREE.Texture | null = null;
+/** Rain streaks in a box that follows the camera. */
+const RAIN_N = 1800;
+const RAIN_BOX = 36;
+function makeRain(): THREE.LineSegments {
+  const pos = new Float32Array(RAIN_N * 6);
+  for (let k = 0; k < RAIN_N; k++) {
+    const x = (Math.random() - 0.5) * RAIN_BOX;
+    const y = Math.random() * RAIN_BOX * 0.6;
+    const z = (Math.random() - 0.5) * RAIN_BOX;
+    pos.set([x, y, z, x + 0.05, y - 0.55, z], k * 6);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const m = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0xb8c6d4, transparent: true, opacity: 0.35, depthWrite: false }));
+  m.frustumCulled = false;
+  m.visible = false;
+  return m;
+}
+function stepRain(rain: THREE.LineSegments, at: THREE.Vector3, dt: number): void {
+  const a = rain.geometry.getAttribute('position') as THREE.BufferAttribute;
+  const p = a.array as Float32Array;
+  const fall = 14 * Math.min(dt, 0.1);
+  const h = RAIN_BOX * 0.6;
+  for (let k = 0; k < RAIN_N; k++) {
+    const o = k * 6;
+    let y = p[o + 1] - fall;
+    if (y < 0) y += h;
+    p[o + 1] = y;
+    p[o + 4] = y - 0.55;
+  }
+  a.needsUpdate = true;
+  rain.position.set(at.x, Math.max(0, at.y - h * 0.5), at.z);
+}
+
 /** Soft radial halo for the floodlights. */
 function glowTexture(): THREE.Texture {
   if (glowTex) return glowTex;
@@ -94,6 +139,19 @@ export class Scene3D {
   private center = new THREE.Vector3();
   /** Skyline ring: an horizon at driver height, a wall from above, so only shown to the low cameras. */
   private ring: THREE.Mesh | null = null;
+  private ringAt = { cx: 0, cy: 0, R: 500 };
+  private far = 520;
+  /** Baked colours, re-mixed when the hour or the weather changes. */
+  private readonly lit: Lit[] = [];
+  private lampMat: THREE.MeshBasicMaterial | null = null;
+  private readonly glows: THREE.Sprite[] = [];
+  private readonly hemi = new THREE.HemisphereLight(0x5a6e88, 0x0b120d, 0.55);
+  private readonly sun = new THREE.DirectionalLight(0x8fa6c8, 0.35);
+  private readonly sodium = new THREE.DirectionalLight(0xffc27a, 0.45);
+  /** Hour of the day (0–24) and track conditions: looks only, the physics does not see the hour. */
+  private hour = 21;
+  private weather: Weather = 'sec';
+  private readonly rain = makeRain();
   private orbit = { th: 0.7, ph: 0.9, r: 260 };
   private look: THREE.Vector3 | null = null;
   private chaseInit = false;
@@ -119,13 +177,12 @@ export class Scene3D {
     scene.background = new THREE.Color(this.theme.sky[0]);
     scene.fog = new THREE.Fog(this.theme.sky[1], 120, 520);
     (this as { cam: THREE.PerspectiveCamera }).cam = new THREE.PerspectiveCamera(60, 1, 0.05, 1600);
-    scene.add(new THREE.HemisphereLight(0x5a6e88, 0x0b120d, 0.55));
-    const moon = new THREE.DirectionalLight(0x8fa6c8, 0.35);
-    moon.position.set(-80, 160, 60);
-    scene.add(moon);
-    const sodium = new THREE.DirectionalLight(0xffc27a, 0.45);
-    sodium.position.set(60, 90, -40);
-    scene.add(sodium);
+    scene.add(this.hemi);
+    this.sun.position.set(-80, 160, 60);
+    scene.add(this.sun);
+    this.sodium.position.set(60, 90, -40);
+    scene.add(this.sodium);
+    scene.add(this.rain);
     this.hero = makeKart(false, new THREE.Color(this.theme.accent).getHex());
     scene.add(this.hero.root);
     this.ghost = makeKart(true, 0);
@@ -179,6 +236,18 @@ export class Scene3D {
       return Math.min(1.25, l);
     };
     const sodium = (l: number, base: [number, number, number]): [number, number, number] => [base[0] * l * 1.08, base[1] * l * 0.92, base[2] * l * 0.7];
+    /** Colour pairs collected while building one buffer; `day` is the albedo under daylight. */
+    const pair = () => ({
+      night: [] as number[],
+      day: [] as number[],
+      add(l: number, base: [number, number, number]) {
+        this.night.push(...sodium(l, base));
+        this.day.push(base[0] * 1.55, base[1] * 1.55, base[2] * 1.55);
+      },
+    });
+    const register = (attr: THREE.BufferAttribute, p: { night: number[]; day: number[] }, role: Role) => {
+      this.lit.push({ attr, night: Float32Array.from(p.night), day: Float32Array.from(p.day), role });
+    };
     // ground with baked light pools
     let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
     for (let i = 0; i < N; i++) {
@@ -191,25 +260,23 @@ export class Scene3D {
     gg.rotateX(-Math.PI / 2);
     gg.translate(cx, -0.04, -cy);
     const gpos = gg.getAttribute('position');
-    const gcol = new Float32Array(gpos.count * 3);
+    const gp = pair();
     const rnd = mulberry(5);
-    for (let v = 0; v < gpos.count; v++) {
-      const c = sodium(light(gpos.getX(v), -gpos.getZ(v)), [this.theme.grass[0] + rnd() * 0.02, this.theme.grass[1] + rnd() * 0.03, this.theme.grass[2]]);
-      gcol.set(c, v * 3);
-    }
-    gg.setAttribute('color', new THREE.BufferAttribute(gcol, 3));
+    for (let v = 0; v < gpos.count; v++) gp.add(light(gpos.getX(v), -gpos.getZ(v)), [this.theme.grass[0] + rnd() * 0.02, this.theme.grass[1] + rnd() * 0.03, this.theme.grass[2]]);
+    const gattr = new THREE.BufferAttribute(Float32Array.from(gp.night), 3);
+    gg.setAttribute('color', gattr);
+    register(gattr, gp, 'ground');
     grp.add(new THREE.Mesh(gg, new THREE.MeshBasicMaterial({ vertexColors: true })));
     // asphalt
     const pos: number[] = [];
-    const col: number[] = [];
+    const col = pair();
     const idx: number[] = [];
     for (let i = 0; i <= N; i++) {
       const ii = i % N;
       for (const sd of [1, -1]) {
         const p = e(ii, sd * t.half);
         pos.push(p.x, p.y, p.z);
-        const c = sodium(light(t.x[ii] + t.nx[ii] * sd * t.half, t.y[ii] + t.ny[ii] * sd * t.half), [0.33, 0.35, 0.38]);
-        col.push(...c);
+        col.add(light(t.x[ii] + t.nx[ii] * sd * t.half, t.y[ii] + t.ny[ii] * sd * t.half), [0.33, 0.35, 0.38]);
       }
       if (i < N) {
         const a = i * 2;
@@ -218,33 +285,39 @@ export class Scene3D {
     }
     const ag = new THREE.BufferGeometry();
     ag.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-    ag.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    const aattr = new THREE.Float32BufferAttribute(col.night, 3);
+    ag.setAttribute('color', aattr);
+    register(aattr, col, 'road');
     ag.setIndex(idx);
     grp.add(new THREE.Mesh(ag, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide })));
     // strips (edge lines, kerbs, bridge walls) as quads between i and i+1
-    const strip = (fn: (i: number) => { a: THREE.Vector3; b: THREE.Vector3; c: [number, number, number] } | null, mat: THREE.Material) => {
+    type StripPt = { a: THREE.Vector3; b: THREE.Vector3; l: number; c: [number, number, number] };
+    const strip = (fn: (i: number) => StripPt | null, mat: THREE.Material, role: Role | null = 'road') => {
       const ps: number[] = [];
-      const cs: number[] = [];
+      const cs = pair();
       for (let i = 0; i < N; i++) {
         const p = fn(i);
         const n = fn((i + 1) % N);
         if (!p || !n) continue;
         for (const v of [p.a, p.b, n.a, p.b, n.b, n.a]) ps.push(v.x, v.y, v.z);
-        for (let k = 0; k < 6; k++) cs.push(...p.c);
+        for (let k = 0; k < 6; k++) cs.add(p.l, p.c);
       }
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.Float32BufferAttribute(ps, 3));
-      g.setAttribute('color', new THREE.Float32BufferAttribute(cs, 3));
+      // concrete is lit by the scene lights: plain white vertex colours, nothing to bake
+      const attr = new THREE.Float32BufferAttribute(role ? cs.night : cs.night.map(() => 1), 3);
+      g.setAttribute('color', attr);
+      if (role) register(attr, cs, role);
       grp.add(new THREE.Mesh(g, mat));
     };
     const vc = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
     for (const sd of [1, -1]) {
-      strip((i) => ({ a: e(i, sd * (t.half - 0.1), 0.012), b: e(i, sd * (t.half - 0.25), 0.012), c: sodium(light(t.x[i], t.y[i]), [0.85, 0.86, 0.87]) }), vc);
-      strip((i) => (q.kerb[i] > 0 ? { a: e(i, sd * t.half, 0.02), b: e(i, sd * (t.half + q.kerb[i]), 0.05), c: sodium(light(t.x[i], t.y[i]), i % 2 ? [0.9, 0.15, 0.16] : [0.95, 0.95, 0.92]) } : null), vc);
+      strip((i) => ({ a: e(i, sd * (t.half - 0.1), 0.012), b: e(i, sd * (t.half - 0.25), 0.012), l: light(t.x[i], t.y[i]), c: [0.85, 0.86, 0.87] }), vc);
+      strip((i) => (q.kerb[i] > 0 ? { a: e(i, sd * t.half, 0.02), b: e(i, sd * (t.half + q.kerb[i]), 0.05), l: light(t.x[i], t.y[i]), c: i % 2 ? [0.9, 0.15, 0.16] : [0.95, 0.95, 0.92] } : null), vc);
     }
     const concrete = new THREE.MeshLambertMaterial({ color: 0x8c9399, side: THREE.DoubleSide });
-    for (const sd of [1, -1]) strip((i) => (t.z[i] < 0.15 ? null : { a: e(i, sd * (t.half + 0.15), -0.75), b: e(i, sd * (t.half + 0.15), 0.85), c: [1, 1, 1] }), concrete);
-    strip((i) => (t.z[i] < 0.3 ? null : { a: e(i, t.half + 0.15, -0.75), b: e(i, -t.half - 0.15, -0.75), c: [1, 1, 1] }), concrete);
+    for (const sd of [1, -1]) strip((i) => (t.z[i] < 0.15 ? null : { a: e(i, sd * (t.half + 0.15), -0.75), b: e(i, sd * (t.half + 0.15), 0.85), l: 1, c: [1, 1, 1] }), concrete, null);
+    strip((i) => (t.z[i] < 0.3 ? null : { a: e(i, t.half + 0.15, -0.75), b: e(i, -t.half - 0.15, -0.75), l: 1, c: [1, 1, 1] }), concrete, null);
     const pil: THREE.Vector3[] = [];
     for (let i = 0; i < N; i += 3) {
       if (t.z[i] <= 1.6) continue;
@@ -276,18 +349,21 @@ export class Scene3D {
     if (tyres.length) {
       const tm = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.32, 0.32, 0.72, 10), new THREE.MeshBasicMaterial({ color: 0xffffff }), tyres.length);
       const c = new THREE.Color();
+      const tp = pair();
       tyres.forEach((p, k) => {
         this.m4.makeTranslation(p.x, 0.36, -p.y);
         tm.setMatrixAt(k, this.m4);
-        const l = p.z;
-        c.setRGB(...(k % 6 === 0 ? sodium(l, [0.7, 0.15, 0.17]) : sodium(l, [0.16, 0.17, 0.18])));
+        tp.add(p.z, k % 6 === 0 ? [0.7, 0.15, 0.17] : [0.16, 0.17, 0.18]);
+        c.setRGB(tp.night[k * 3], tp.night[k * 3 + 1], tp.night[k * 3 + 2]);
         tm.setColorAt(k, c);
       });
+      register(tm.instanceColor!, tp, 'other');
       grp.add(tm);
     }
     // poles and lamps
     const poleMat = new THREE.MeshLambertMaterial({ color: 0x3a4248 });
     const lampMat = new THREE.MeshBasicMaterial({ color: 0xffd08a });
+    this.lampMat = lampMat;
     for (const p of poles) {
       const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.16, 12, 6), poleMat);
       pole.position.set(p.x, 6, -p.y);
@@ -299,6 +375,7 @@ export class Scene3D {
       glow.scale.set(6, 6, 1);
       glow.position.set(p.x, 12, -p.y);
       grp.add(glow);
+      this.glows.push(glow);
     }
     // dark tree line
     const trees: THREE.Vector3[] = [];
@@ -313,26 +390,29 @@ export class Scene3D {
     }
     const cone = new THREE.InstancedMesh(new THREE.ConeGeometry(2.2, 7, 7), new THREE.MeshBasicMaterial({ color: 0xffffff }), trees.length);
     const tc = new THREE.Color();
+    const trp = pair();
     trees.forEach((p, k) => {
       this.m4.makeScale(p.z, p.z, p.z);
       this.m4.setPosition(p.x, 3.5 * p.z, -p.y);
       cone.setMatrixAt(k, this.m4);
-      tc.setRGB(...sodium(light(p.x, p.y), [this.theme.trees[0] + r() * 0.03, this.theme.trees[1] + r() * 0.05, this.theme.trees[2]]));
+      trp.add(light(p.x, p.y), [this.theme.trees[0] + r() * 0.03, this.theme.trees[1] + r() * 0.05, this.theme.trees[2]]);
+      tc.setRGB(trp.night[k * 3], trp.night[k * 3 + 1], trp.night[k * 3 + 2]);
       cone.setColorAt(k, tc);
     });
+    if (trees.length) register(cone.instanceColor!, trp, 'other');
     grp.add(cone);
     this.scene.add(grp);
     this.center.set(cx, 0, -cy);
     this.orbit.r = Math.max(x1 - x0, y1 - y0) * 1.1;
     // the overview must stay out of the fog on long circuits
     const far = Math.max(520, this.orbit.r * 1.9);
-    this.scene.fog = new THREE.Fog(this.theme.sky[1], 120, far);
-    this.ring = this.horizon(cx, cy, far * 0.9);
-    this.scene.add(this.ring);
+    this.far = far;
+    this.ringAt = { cx, cy, R: far * 0.9 };
+    this.applyLight();
   }
 
   /** The place's skyline on a ring around the circuit: sky gradient, then the silhouette, out of the fog. */
-  private horizon(cx: number, cy: number, R: number): THREE.Mesh {
+  private horizon(cx: number, cy: number, R: number, top: string, bottom: string, glowAlpha: number, ink: string): THREE.Mesh {
     const W = 2048;
     const H = 256;
     const cv = document.createElement('canvas');
@@ -340,20 +420,20 @@ export class Scene3D {
     cv.height = H;
     const c = cv.getContext('2d')!;
     const g = c.createLinearGradient(0, 0, 0, H);
-    g.addColorStop(0, this.theme.sky[0]);
-    g.addColorStop(1, this.theme.sky[1]);
+    g.addColorStop(0, top);
+    g.addColorStop(1, bottom);
     c.fillStyle = g;
     c.fillRect(0, 0, W, H);
     // a low glow in the place's colour, so the silhouette reads against the night
     const glow = c.createLinearGradient(0, H * 0.35, 0, H);
     glow.addColorStop(0, 'rgba(0,0,0,0)');
     glow.addColorStop(1, this.theme.accent);
-    c.globalAlpha = 0.28;
+    c.globalAlpha = glowAlpha;
     c.fillStyle = glow;
     c.fillRect(0, 0, W, H);
     c.globalAlpha = 1;
     // the skyline twice around the ring, each copy half the canvas wide
-    const sil = skylineCanvas(this.theme, W / 2, Math.round(H * 0.62), '#06070a');
+    const sil = skylineCanvas(this.theme, W / 2, Math.round(H * 0.62), ink);
     c.drawImage(sil, 0, H - sil.height);
     c.drawImage(sil, W / 2, H - sil.height);
     const tex = new THREE.CanvasTexture(cv);
@@ -366,6 +446,77 @@ export class Scene3D {
     mesh.position.set(cx, h / 2 - 3, -cy);
     mesh.renderOrder = -1;
     return mesh;
+  }
+
+  /** Hour of the day (0–24): sun, sky, floodlights. */
+  setTime(hour: number): void {
+    this.hour = ((hour % 24) + 24) % 24;
+    if (this.ok) this.applyLight();
+  }
+
+  /** Track conditions: wet asphalt, overcast sky, rain. */
+  setWeather(w: Weather): void {
+    this.weather = w;
+    if (this.ok) this.applyLight();
+  }
+
+  private applyLight(): void {
+    const smooth = (a: number, b: number, x: number) => {
+      const u = Math.max(0, Math.min(1, (x - a) / (b - a)));
+      return u * u * (3 - 2 * u);
+    };
+    const mix = (a: THREE.Color, b: THREE.Color, k: number) => a.clone().lerp(b, k);
+    const elev = Math.sin(((this.hour - 6) / 12) * Math.PI);
+    const day = smooth(-0.1, 0.3, elev);
+    const golden = day * (1 - smooth(0.12, 0.5, elev));
+    const lamps = 1 - smooth(-0.05, 0.25, elev);
+    const w = this.weather;
+    const overcast = w === 'pluie' ? 1 : w === 'humide' ? 0.55 : 0;
+    // daylight colour: warm at sunrise and sunset, grey and dimmer under clouds
+    const level = 1 - 0.42 * overcast;
+    const tint = [level, level * (1 - 0.22 * golden), level * (1 - 0.42 * golden)];
+    // the track surface: dark and glossy in the wet (the lamp pools shine more), dusty when greasy
+    const road = w === 'pluie' ? [0.55, 0.57, 0.62] : w === 'humide' ? [0.72, 0.74, 0.78] : w === 'gras' ? [1.06, 1.0, 0.88] : [1, 1, 1];
+    const shine = w === 'pluie' ? 1.35 : w === 'humide' ? 1.15 : 1;
+    for (const l of this.lit) {
+      const a = l.attr.array as Float32Array;
+      const isRoad = l.role === 'road';
+      const g = l.role === 'ground' && overcast ? 1 - 0.15 * overcast : 1;
+      for (let i = 0; i < a.length; i++) {
+        const ch = i % 3;
+        const rm = isRoad ? road[ch] : g;
+        a[i] = l.night[i] * lamps * (isRoad ? shine * rm : rm) + l.day[i] * day * tint[ch] * rm;
+      }
+      l.attr.needsUpdate = true;
+    }
+    // sky and fog: night colours of the place, blue day, orange low sun, grey rain
+    const t = this.theme;
+    const dayTop = new THREE.Color(overcast ? 0x7d8792 : 0x4f86cc);
+    const dayLow = new THREE.Color(overcast ? 0xa3abb3 : 0xb8d2e8);
+    const gold = new THREE.Color(0xf09a55);
+    const top = mix(new THREE.Color(t.sky[0]), dayTop, day);
+    const low = mix(mix(new THREE.Color(t.sky[1]), dayLow, day), gold, golden * (1 - overcast) * 0.8);
+    this.scene.background = top;
+    const far = this.far * (w === 'pluie' ? 0.55 : w === 'humide' ? 0.8 : 1);
+    this.scene.fog = new THREE.Fog(low, w === 'pluie' ? 40 : 120, far);
+    this.hemi.intensity = 0.55 + 1.1 * day * level;
+    this.hemi.color.set(day > 0.5 ? 0xdfe8f2 : 0x5a6e88);
+    this.sun.intensity = 0.35 + 1.4 * day * (1 - 0.7 * overcast);
+    this.sun.color.copy(mix(new THREE.Color(0x8fa6c8), mix(new THREE.Color(0xfff1dc), gold, golden), day));
+    this.sun.position.set(-160 * Math.cos(((this.hour - 6) / 12) * Math.PI), 40 + 160 * Math.max(0.1, elev), 60);
+    this.sodium.intensity = 0.45 * lamps;
+    if (this.lampMat) this.lampMat.color.set(lamps > 0.3 ? 0xffd08a : 0x8a8f94);
+    for (const g of this.glows) g.material.opacity = 0.9 * lamps;
+    this.rain.visible = w === 'pluie';
+    // horizon: same sky, the city glow only at night, the skyline a shade darker than the low sky
+    if (this.ring) {
+      this.scene.remove(this.ring);
+      (this.ring.material as THREE.MeshBasicMaterial).map?.dispose();
+      this.ring.geometry.dispose();
+    }
+    const ink = mix(new THREE.Color(0x06070a), low.clone().multiplyScalar(0.45), day);
+    this.ring = this.horizon(this.ringAt.cx, this.ringAt.cy, this.ringAt.R, '#' + top.getHexString(), '#' + low.getHexString(), 0.28 * (1 - day), '#' + ink.getHexString());
+    this.scene.add(this.ring);
   }
 
   /** Race line of the best lap, coloured by speed. */
@@ -488,6 +639,7 @@ export class Scene3D {
     }
     cam.updateProjectionMatrix();
     if (this.ring) this.ring.visible = !!target && (this.mode === 'onboard' || this.mode === 'chase');
+    if (this.rain.visible) stepRain(this.rain, cam.position, dt);
     this.renderer.render(this.scene, cam);
   }
 
