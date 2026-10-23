@@ -4,7 +4,7 @@ import { mulberry32 } from '../sim/rng';
 import type { EpisodeSpec } from './episode';
 import type { CandidateResult, WorldSpec } from './evalCore';
 import { SepCmaEs, sampleCandidate } from './es';
-import { DRIVER_SHAPE, paramCount } from './mlp';
+import { driverShape, paramCount } from './mlp';
 import type { EvalPool } from './pool';
 
 export interface TrainConfig {
@@ -65,7 +65,7 @@ export class Trainer {
   constructor(pool: EvalPool, cfg: TrainConfig) {
     this.cfg = { lambda: 256, sigma0: 0.5, seed: 1, randomStarts: cfg.others?.length ? 3 : 1, maxTime: 150, ...cfg };
     this.pool = pool;
-    this.es = new SepCmaEs(paramCount(DRIVER_SHAPE), { lambda: this.cfg.lambda, sigma0: this.cfg.sigma0, seed: this.cfg.seed, x0: this.cfg.x0 });
+    this.es = new SepCmaEs(paramCount(driverShape(cfg.world.hidden)), { lambda: this.cfg.lambda, sigma0: this.cfg.sigma0, seed: this.cfg.seed, x0: this.cfg.x0 });
   }
 
   /** Common starts of a generation: the start line first (its lap time is the one reported). */
@@ -145,7 +145,7 @@ export class Trainer {
   brain(): Brain | null {
     if (!this.best) return null;
     return {
-      shape: DRIVER_SHAPE.sizes, params: Array.from(this.best.params), lap: this.best.lap, gen: this.best.gen,
+      shape: driverShape(this.cfg.world.hidden).sizes, params: Array.from(this.best.params), lap: this.best.lap, gen: this.best.gen,
       kart: this.cfg.world.kart, track: this.cfg.world.track.id, scale: this.cfg.world.scale, createdAt: new Date().toISOString(),
     };
   }

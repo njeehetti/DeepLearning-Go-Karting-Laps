@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import lyl from '../data/tracks/lyl.json';
 import type { TrackDef } from '../src/track/types';
 import { DEFAULT_CALIBRATION } from '../src/sim/defaults';
-import { DRIVER_SHAPE, Mlp, paramCount } from '../src/ai/mlp';
+import { DRIVER_SHAPE, LEGACY_SHAPE, Mlp, driverShape, paramCount, toDriverShape, widen } from '../src/ai/mlp';
 import { N_OBS } from '../src/ai/obs';
 import { SepCmaEs, gaussVec, sampleCandidate } from '../src/ai/es';
 import { Evaluator, World, type WorldSpec } from '../src/ai/evalCore';
@@ -17,13 +17,26 @@ const world: WorldSpec = {
 };
 
 describe('réseau', () => {
-  it('a 18 entrées (braquage compris) et 3 sorties', () => {
-    expect(DRIVER_SHAPE.sizes).toEqual([22, 16, 3]);
+  it('a 22 entrées, 32 neurones cachés et 3 sorties', () => {
+    expect(DRIVER_SHAPE.sizes).toEqual([22, 32, 3]);
     expect(N_OBS).toBe(22);
-    expect(paramCount(DRIVER_SHAPE)).toBe(16 * 23 + 3 * 17);
+    expect(paramCount(DRIVER_SHAPE)).toBe(32 * 23 + 3 * 33);
     const out = new Mlp().forward(new Float64Array(paramCount(DRIVER_SHAPE)).fill(0.1), new Float64Array(22).fill(0.5));
     expect(out).toHaveLength(3);
     expect(Number.isFinite(out[0])).toBe(true);
+  });
+  it('s’élargit sans changer ce que fait le pilote', () => {
+    const r = mulberry32(3);
+    const p = Float64Array.from({ length: paramCount(LEGACY_SHAPE) }, () => r() * 2 - 1);
+    const big = driverShape([32]);
+    const q = widen(p, LEGACY_SHAPE, big, mulberry32(4));
+    expect(toDriverShape(p)).toHaveLength(paramCount(DRIVER_SHAPE));
+    expect(toDriverShape([1, 2, 3])).toBeNull();
+    expect(q).toHaveLength(paramCount(big));
+    const x = Float64Array.from({ length: 22 }, () => r() * 2 - 1);
+    const a = Array.from(new Mlp(LEGACY_SHAPE).forward(p, x));
+    const b = Array.from(new Mlp(big).forward(q, x));
+    b.forEach((v, k) => expect(v).toBeCloseTo(a[k], 12));
   });
 });
 
@@ -68,7 +81,7 @@ describe('épisode', () => {
     // steering output driven by the "Braquage" input with a large negative gain: a self-sustained saw
     const saw = new Float64Array(n);
     const calm = new Float64Array(n);
-    const hid = 16 * (N_OBS + 1);
+    const hid = DRIVER_SHAPE.sizes[1] * (N_OBS + 1);
     saw[14] = -8; // hidden 0 ← input 14 (wheel angle)
     saw[N_OBS] = 0.3; // hidden 0 bias
     saw[hid + 0] = 6; // steer ← hidden 0

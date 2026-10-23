@@ -9,7 +9,7 @@ import { LineEvaluator } from '../sim/qss';
 import { makeQss2Ideal, solveQss2 } from '../sim/qss2';
 import { Pilot, runEpisode, type EpisodeResult, type EpisodeSpec } from './episode';
 import { sampleCandidate, type SampleSpec } from './es';
-import { DRIVER_SHAPE, paramCount } from './mlp';
+import { driverShape, paramCount, type MlpShape } from './mlp';
 
 /** A calibrated kart and the track conditions it runs in. */
 export type KartSetup = Pick<Calibration, 'kartId' | 'mu' | 'powerScale' | 'vTopKmh' | 'transmission' | 'driver'> & { weather?: Weather };
@@ -21,6 +21,8 @@ export interface WorldSpec {
   kart: KartSetup;
   /** More circuits driven by the same brain (generalist training); episodes pick one with `track`. */
   others?: TrackDef[];
+  /** Hidden layer sizes of the driver network (default DRIVER_SHAPE). */
+  hidden?: number[];
 }
 
 export interface CandidateResult {
@@ -54,9 +56,12 @@ export class World {
   readonly sim: KartSim;
   /** Theoretical (ideal) speed profile on the centreline, used for rolling starts. */
   readonly profile: Float64Array;
-  readonly dim = paramCount(DRIVER_SHAPE);
+  readonly shape: MlpShape;
+  readonly dim: number;
 
   constructor(spec: WorldSpec) {
+    this.shape = driverShape(spec.hidden);
+    this.dim = paramCount(this.shape);
     const track = buildTrack(spec.track, { scale: spec.scale, width: spec.width });
     this.q = new TrackQuery(track);
     const p = paramsOf(spec.kart);
@@ -75,7 +80,7 @@ export class World {
 
 export class Evaluator {
   readonly world: World;
-  private readonly pilot = new Pilot();
+  private readonly pilot: Pilot;
   private readonly st = new KartState();
   private readonly x: Float64Array;
   private readonly z: Float64Array;
@@ -86,6 +91,7 @@ export class Evaluator {
   constructor(world: World, others: World[] = []) {
     this.world = world;
     this.worlds = [world, ...others];
+    this.pilot = new Pilot(world.shape);
     this.pilot.profile = world.profile;
     this.x = new Float64Array(world.dim);
     this.z = new Float64Array(world.dim);

@@ -8,7 +8,8 @@ import { DEFAULT_CALIBRATION, LAP_EVIDENCE } from '../sim/defaults';
 import { ENGINES, wheelPower } from '../sim/engine';
 import { KARTS, type KartId } from '../sim/karts';
 import { LIVE_STRIDE, World, type WorldSpec } from '../ai/evalCore';
-import { DRIVER_SHAPE, paramCount } from '../ai/mlp';
+import { DRIVER_SHAPE, toDriverShape } from '../ai/mlp';
+import generalist from '../../data/brains/generaliste-k270.json';
 import { N_OBS } from '../ai/obs';
 import { WorkerPool, type WorkerLike } from '../ai/pool';
 import { cornerSheet, indexAtDist, poseAt, type CornerSheetRow, type Pose, type Run } from '../ai/record';
@@ -122,6 +123,15 @@ const S = {
   hoverDist: -1,
   selCorner: -1,
 };
+
+/** A brain on the current network: older 16-neuron brains are widened (they drive exactly the same). */
+function asDriver(b: Brain | null): Brain | null {
+  const params = b && Array.isArray(b.params) ? toDriverShape(b.params, b.shape) : null;
+  return b && params ? { ...b, shape: DRIVER_SHAPE.sizes, params } : null;
+}
+const brainOf = (k: string) => asDriver(LS.get<Brain>(k));
+/** Driver trained on every circuit at once: the starting point wherever nothing was trained yet. */
+const GENERALIST = asDriver(generalist as Brain)!;
 
 function calibOf(k: KartId): Calibration {
   return LS.get<Calibration>(calibKey(k)) ?? LS.get<Calibration>(`calib:lyl:${k}`) ?? DEFAULT_CALIBRATION[k];
@@ -307,7 +317,7 @@ async function refreshGhost(): Promise<void> {
     } else S.ghostLabel = 'Pas encore 50 générations d’écart';
   } else if (S.ghostMode === 'other') {
     const other: KartId = S.kartId === 'k270' ? 'k390' : 'k270';
-    const b = LS.get<Brain>(brainKey(other));
+    const b = brainOf(brainKey(other));
     if (b) {
       const r = await ask({ type: 'record', world: worldOf(other), params: b.params });
       if (r.type === 'record') {
@@ -351,11 +361,14 @@ async function ensureTrainer(fresh = false): Promise<Trainer> {
   }
   if (!S.trainer || fresh || (S.trainer as Trainer & { key?: string }).key !== key) {
     // a new condition starts from the dry driver: it already knows the circuit, it only has to find the grip
-    const stored = fresh ? null : LS.get<Brain>(brainKey(S.kartId)) ?? LS.get<Brain>(brainKey(S.kartId, 'sec'));
+    const stored = fresh ? null : brainOf(brainKey(S.kartId)) ?? brainOf(brainKey(S.kartId, 'sec'));
+    // nothing yet on this circuit: start from the generalist, which already drives a lap almost anywhere
+    const x0 = stored ?? (fresh ? null : GENERALIST);
+    if (!stored && x0) $('brain-msg').textContent = 'Départ depuis le pilote généraliste, entraîné sur les 9 circuits à la fois.';
     // same rolling start as the replay recorder (tool worker), so a recorded lap reproduces the trained one
     const local = new World(world);
     const startSpeed = (s: number) => local.startSpeed(s);
-    const tr = new Trainer(S.pool, { world, lambda: S.pop, seed: (Math.random() * 1e9) | 0, L: track.L, startSpeed, x0: stored?.params, sigma0: stored ? 0.15 : 0.5 });
+    const tr = new Trainer(S.pool, { world, lambda: S.pop, seed: (Math.random() * 1e9) | 0, L: track.L, startSpeed, x0: x0?.params, sigma0: stored ? 0.15 : x0 ? 0.25 : 0.5 });
     (tr as Trainer & { key?: string }).key = key;
     S.trainer = tr;
     S.computeMs = 0;
@@ -373,7 +386,7 @@ async function loop(): Promise<void> {
     onGen(tr, s);
     if ((tr.best?.lap ?? Infinity) < before - 1e-6 && tr.best) {
       const brain = tr.brain()!;
-      const prev = LS.get<Brain>(brainKey(S.kartId));
+      const prev = brainOf(brainKey(S.kartId));
       if (!prev || brain.lap < prev.lap) LS.set(brainKey(S.kartId), brain);
       void setBest(brain);
     }
@@ -451,7 +464,7 @@ async function setKart(k: KartId): Promise<void> {
   S.trainer = null;
   updateHeader();
   updateMeta();
-  await setBest(LS.get<Brain>(brainKey(k)));
+  await setBest(brainOf(brainKey(k)));
   void loadTheory(k);
   void refreshGhost();
 }
@@ -466,7 +479,7 @@ async function setWeather(w: Weather): Promise<void> {
   scene.setWeather(w);
   $('weather-note').textContent = w === 'sec' ? '' : WEATHERS[w].note;
   updateHeader();
-  await setBest(LS.get<Brain>(brainKey(S.kartId)));
+  await setBest(brainOf(brainKey(S.kartId)));
   void loadTheory(S.kartId);
   void refreshGhost();
   renderWeather();
@@ -482,10 +495,10 @@ let weatherBusy = false;
 async function renderWeather(compute = false): Promise<void> {
   const tb = $('weather-rows');
   const dry = S.theory.get(thKey(S.kartId, 'sec'))?.lap ?? NaN;
-  const dryAi = LS.get<Brain>(brainKey(S.kartId, 'sec'))?.lap ?? NaN;
+  const dryAi = brainOf(brainKey(S.kartId, 'sec'))?.lap ?? NaN;
   tb.innerHTML = WEATHER_IDS.map((w) => {
     const th = S.theory.get(thKey(S.kartId, w))?.lap ?? NaN;
-    const ai = LS.get<Brain>(brainKey(S.kartId, w))?.lap ?? NaN;
+    const ai = brainOf(brainKey(S.kartId, w))?.lap ?? NaN;
     const d = (a: number, b: number) => (Number.isFinite(a) && Number.isFinite(b) && w !== 'sec' ? `<span class="neg">+${fr(a - b, 2)} s</span> <small>(+${fr((a / b - 1) * 100, 0)} %)</small>` : '');
     return `<tr${w === S.weather ? ' class="sel"' : ''}><td class="nm">${WEATHERS[w].label}</td><td class="num">${Number.isFinite(th) ? fmtLap(th) : '…'}</td><td class="num">${d(th, dry)}</td><td class="num">${Number.isFinite(ai) ? fmtLap(ai) : '<span class="faint">à entraîner</span>'}</td><td class="num">${d(ai, dryAi)}</td><td class="note-cell">${WEATHERS[w].note}</td></tr>`;
   }).join('');
@@ -543,7 +556,7 @@ $('calib').addEventListener('click', async () => {
 });
 
 $('export').addEventListener('click', () => {
-  const b = S.best ?? LS.get<Brain>(brainKey(S.kartId));
+  const b = S.best ?? brainOf(brainKey(S.kartId));
   if (!b) {
     $('brain-msg').textContent = 'Pas encore de cerveau à exporter : lance l’entraînement.';
     return;
@@ -560,8 +573,8 @@ $<HTMLInputElement>('import').addEventListener('change', async (e) => {
   if (!f) return;
   try {
     const o = JSON.parse(await f.text());
-    const b: Brain = o.brain ?? o;
-    if (!Array.isArray(b.params) || b.params.length !== paramCount(DRIVER_SHAPE) || !b.kart?.kartId) throw new Error('format');
+    const b = asDriver(o.brain ?? o);
+    if (!b || !b.kart?.kartId) throw new Error('format');
     LS.set(brainKey(b.kart.kartId), b);
     $('brain-msg').textContent = `Cerveau ${KARTS[b.kart.kartId as KartId].label} importé (${fmtLap(b.lap)}).`;
     if (b.kart.kartId === S.kartId) await setBest(b);
@@ -982,6 +995,6 @@ updateHeader();
 updateMeta();
 setCam('heli');
 void loadTheory(S.kartId);
-void setBest(LS.get<Brain>(brainKey(S.kartId)));
+void setBest(brainOf(brainKey(S.kartId)));
 requestAnimationFrame(tick);
 if (import.meta.env.DEV) (window as unknown as { __klab: unknown }).__klab = { scene, S, q };

@@ -42,7 +42,8 @@ export class NnView {
         const c = document.createElementNS(NS, 'circle');
         c.setAttribute('cx', String(pos[l][k][0]));
         c.setAttribute('cy', String(pos[l][k][1]));
-        c.setAttribute('r', l === 1 ? '5.5' : '5');
+        // the circles shrink when a layer holds more neurons than fit at full size
+        c.setAttribute('r', String(Math.min(l === 1 ? 5.5 : 5, (232 / n) * 0.42)));
         c.setAttribute('stroke', '#5a6872');
         this.svg.appendChild(c);
         this.nodes[l].push(c);

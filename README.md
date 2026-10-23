@@ -41,7 +41,7 @@ Le circuit se choisit en haut de la page (ou avec `?c=genk` dans l'adresse). Cha
 
 ## Météo et heure
 
-La météo se choisit à côté du circuit : **sec**, **piste grasse** (poussière, huile, piste verte sans gomme), **humide** (piste qui sèche) ou **pluie**. Elle change la physique : adhérence de l'asphalte (−12 %, −25 %, −40 %), vibreurs et herbe bien plus glissants, eau qui freine les roues. Chaque condition a son propre cerveau, qui démarre du pilote du sec. La vue Analyse compare le tour parfait et le meilleur tour IA dans chaque condition ; sur le LYL en 270cc, la pluie coûte environ 16 s (+17 %) au tour parfait.
+La météo se choisit à côté du circuit : **sec**, **piste grasse** (poussière, huile, piste verte sans gomme), **humide** (piste qui sèche) ou **pluie**. Elle change la physique : adhérence de l'asphalte (−12 %, −25 %, −40 %), vibreurs et herbe bien plus glissants, eau qui freine les roues. Chaque condition a son propre cerveau, qui démarre du pilote du sec. Sur un circuit encore jamais entraîné, l'entraînement démarre du **pilote généraliste** (`data/brains/generaliste-k270.json`), entraîné 20 minutes sur les 9 circuits à la fois : il boucle déjà un tour partout (1:32.6 au LYL, 1:20.2 au Mans, 1:16.6 à Adria). La vue Analyse compare le tour parfait et le meilleur tour IA dans chaque condition ; sur le LYL en 270cc, la pluie coûte environ 16 s (+17 %) au tour parfait.
 
 Le curseur **Heure** fait passer la piste de la nuit (projecteurs au sodium) au jour, par le lever et le coucher du soleil. C'est un réglage d'affichage : la physique ne voit pas l'heure.
 
@@ -61,6 +61,7 @@ npm run build      # site statique dans dist/
 npx tsx scripts/train-headless.ts --track genk --kart k270 --minutes 10   # entraînement sans interface
 npx tsx scripts/train-headless.ts --weather pluie --x0 <cerveau.json>     # sous la pluie, à partir d'un cerveau
 npx tsx scripts/train-headless.ts --others all --minutes 20               # pilote généraliste, tous les circuits
+npx tsx scripts/train-headless.ts --others all --hidden 32 --x0 <cerveau.json>  # réseau élargi à partir d'un cerveau existant
 npx tsx scripts/train-headless.ts --eval <cerveau.json>                   # tour lancé sur chaque circuit
 ```
 
@@ -69,7 +70,7 @@ npx tsx scripts/train-headless.ts --eval <cerveau.json>                   # tour
 
 **La physique** tourne à 120 Hz, de façon déterministe : pneus Pacejka simplifiés, essieu arrière rigide, frein arrière seul qui peut bloquer, roue intérieure qui se soulève en virage serré, transfert de charge, pente du pont, herbe, vibreurs, murs de pneus. Un tête-à-queue est possible.
 
-**Le pilote** est un réseau de neurones 22-16-3. Il reçoit 9 rayons vers les bords de piste, sa vitesse, sa dérive, son lacet, son écart latéral, son erreur de cap, son braquage actuel, la courbure de la piste à 10, 25 et 50 m, et ce qu'un pilote sait du circuit : le freinage nécessaire pour passer les prochains virages, sa marge de vitesse, son accélération et sa pédale de frein. Il décide 30 fois par seconde de la direction, du gaz et du frein, avec l'inertie des mains sur le volant. Comme un vrai pilote, il n'a qu'un pied droit : dès qu'il freine, il lâche les gaz.
+**Le pilote** est un réseau de neurones 22-32-3 (les cerveaux plus anciens à 16 neurones sont élargis au chargement et conduisent à l'identique). Il reçoit 9 rayons vers les bords de piste, sa vitesse, sa dérive, son lacet, son écart latéral, son erreur de cap, son braquage actuel, la courbure de la piste à 10, 25 et 50 m, et ce qu'un pilote sait du circuit : le freinage nécessaire pour passer les prochains virages, sa marge de vitesse, son accélération et sa pédale de frein. Il décide 30 fois par seconde de la direction, du gaz et du frein, avec l'inertie des mains sur le volant. Comme un vrai pilote, il n'a qu'un pied droit : dès qu'il freine, il lâche les gaz.
 
 **L'apprentissage** est une neuroévolution (sep-CMA-ES) : à chaque génération, 256 variantes du cerveau roulent en parallèle dans des Web Workers ; les meilleures orientent la génération suivante. Le meilleur pilote reroule à chaque génération, donc le record ne recule jamais. D'abord finir le tour, ensuite aller vite ; scier le volant ou tapoter les pédales coûte des points.
 

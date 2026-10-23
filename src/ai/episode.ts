@@ -2,7 +2,7 @@
 // fitness. DOM-free, allocation-free per step.
 import { DT, KartState, type KartInput, type KartSim } from '../sim/kart';
 import type { TrackQuery } from '../track/query';
-import { Mlp, controlsFromOutput } from './mlp';
+import { Mlp, controlsFromOutput, type MlpShape } from './mlp';
 import { N_OBS, observe } from './obs';
 
 export const DECISION_EVERY = 4; // 120 Hz / 4 = 30 Hz
@@ -52,13 +52,17 @@ export interface StepHook {
 }
 
 export class Pilot {
-  readonly mlp = new Mlp();
+  readonly mlp: Mlp;
   readonly obs = new Float64Array(N_OBS);
   readonly rays = new Float64Array(9);
   readonly inp: KartInput = { steer: 0, throttle: 0, brake: 0 };
   /** Theoretical centreline speed (m/s) of the circuit being driven, see observe(). */
   profile: Float64Array | null = null;
   private steer = 0;
+
+  constructor(shape?: MlpShape) {
+    this.mlp = new Mlp(shape);
+  }
 
   reset(): void {
     this.steer = 0;
