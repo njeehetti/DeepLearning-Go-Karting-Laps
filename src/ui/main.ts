@@ -227,7 +227,9 @@ function updateHeader(): void {
     LS.set('track', sel.value);
     const u = new URL(location.href);
     u.searchParams.delete('c');
-    location.href = u.toString();
+    // assigning the same URL with a #hash only scrolls to the anchor: force the reload
+    if (u.href === location.href) location.reload();
+    else location.href = u.toString();
   });
   $('t-track').textContent = DEF.short ?? DEF.name;
   document.title = `Kart Lap Lab · ${DEF.short ?? DEF.name}`;
