@@ -375,9 +375,10 @@ async function ensureTrainer(fresh = false): Promise<Trainer> {
     // nothing yet on this circuit: start from the generalist, which already drives a lap almost anywhere
     const seed = fresh ? null : S.seed;
     S.seed = null;
-    const x0 = seed?.brain ?? stored ?? (fresh ? null : GENERALIST);
+    // a circuit never trained starts from zero: the pilots learn to drive in front of you (the generalist
+    // or another circuit's driver is only a starting point when picked with « Partir de lui »)
+    const x0 = seed?.brain ?? stored;
     if (seed) $('brain-msg').textContent = `Départ depuis le ${seed.label}.`;
-    else if (!stored && x0) $('brain-msg').textContent = 'Départ depuis le pilote généraliste, entraîné sur les 9 circuits à la fois.';
     // same rolling start as the replay recorder (tool worker), so a recorded lap reproduces the trained one
     const local = new World(world);
     const startSpeed = (s: number) => local.startSpeed(s);
@@ -461,13 +462,15 @@ $('run').addEventListener('click', () => {
   updateHeader();
   if (S.running) void loop();
 });
+// a new population from zero; the saved record is kept and only replaced if the new pilots beat it
 $('reset').addEventListener('click', async () => {
   S.running = false;
-  LS.del(brainKey(S.kartId));
   await ensureTrainer(true);
-  await setBest(null);
   drawEvoNow();
   updateHeader();
+  $('brain-msg').textContent = S.best
+    ? `Nouveaux pilotes partis de zéro. Ton record (${fmtLap(S.best.lap)}) reste gardé tant qu’ils ne le battent pas.`
+    : 'Nouveaux pilotes partis de zéro.';
 });
 async function setKart(k: KartId): Promise<void> {
   if (k === S.kartId) return;
