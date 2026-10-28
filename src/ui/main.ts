@@ -241,6 +241,7 @@ function updateHeader(): void {
   const pill = $('status');
   pill.className = 'status' + (S.running ? ' on' : '');
   pill.querySelector('span')!.textContent = S.running ? 'Entraînement en cours' : 'En pause';
+  $('save-pilot').hidden = !S.trainer?.history.length;
   $('run').textContent = S.running ? 'Mettre en pause' : S.trainer && S.trainer.history.length ? 'Reprendre l’entraînement' : 'Lancer l’entraînement';
   $('k270').setAttribute('aria-pressed', String(S.kartId === 'k270'));
   $('k390').setAttribute('aria-pressed', String(S.kartId === 'k390'));
@@ -646,7 +647,36 @@ interface Guest {
   name: string;
   home: string;
   brain: Brain;
+  /** Saved by the user from a training run (can be removed). */
+  saved?: boolean;
 }
+/** "de Genk", "du Mans". */
+const of = (n: string) => (n.startsWith('Le ') ? 'du ' + n.slice(3) : 'de ' + n);
+
+// ---------- pilots saved from a training run, to race them on other circuits ----------
+interface SavedPilot {
+  id: string;
+  trackName: string;
+  brain: Brain;
+}
+const savedPilots = () => LS.get<SavedPilot[]>('saved-pilots') ?? [];
+$('save-pilot').addEventListener('click', () => {
+  const b = S.trainer?.snapshot();
+  const btn = $('save-pilot');
+  if (!b) return;
+  const list = savedPilots();
+  const n = DEF.short ?? DEF.name;
+  if (!list.some((p) => p.brain.track === b.track && p.brain.gen === b.gen && p.brain.kart.kartId === b.kart.kartId)) {
+    LS.set('saved-pilots', [...list, { id: `s${Date.now()}`, trackName: n, brain: b }]);
+    if (LS.get<SavedPilot[]>('saved-pilots')?.length !== list.length + 1) {
+      btn.textContent = 'Stockage plein : exporte-le depuis la vue Cerveau';
+      return;
+    }
+  }
+  btn.textContent = `Sauvé : ${n} · gén. ${fr(b.gen + 1)}`;
+  setTimeout(() => (btn.textContent = 'Sauver ce pilote'), 2500);
+  void renderGuests();
+});
 function guests(): Guest[] {
   const out: Guest[] = GENERALIST ? [{ id: 'generaliste', label: 'pilote généraliste', name: 'Généraliste', home: 'les 9 circuits à la fois', brain: GENERALIST }] : [];
   if (NEVER_LYL) out.push({ id: 'sans-lyl', label: 'pilote qui n’a jamais vu le LYL', name: 'Jamais vu le LYL', home: 'les 8 autres circuits, à 80 kg', brain: NEVER_LYL });
@@ -654,7 +684,14 @@ function guests(): Guest[] {
     if (t.id === DEF.id) continue;
     const b = brainOf(brainKeyOf(t.id, S.kartId, S.weather)) ?? brainOf(brainKeyOf(t.id, S.kartId, 'sec'));
     const n = t.short ?? t.name;
-    if (b) out.push({ id: t.id, label: `pilote ${n.startsWith('Le ') ? 'du ' + n.slice(3) : 'de ' + n}`, name: n, home: `${n} (${fmtLap(b.lap)})`, brain: b });
+    if (b) out.push({ id: t.id, label: `pilote ${of(n)}`, name: n, home: `${n} (${fmtLap(b.lap)})`, brain: b });
+  }
+  for (const p of savedPilots()) {
+    const b = asDriver(p.brain);
+    if (!b) continue;
+    const gen = `génération ${fr(p.brain.gen + 1)}`;
+    const lap = Number.isFinite(b.lap) && b.lap ? fmtLap(b.lap) : 'pas encore de tour propre';
+    out.push({ id: p.id, label: `pilote ${of(p.trackName)} à la ${gen}`, name: `${p.trackName} · gén. ${fr(p.brain.gen + 1)}`, home: `${p.trackName}, ${gen} (${lap})`, brain: b, saved: true });
   }
   return out;
 }
@@ -668,7 +705,8 @@ async function renderGuests(): Promise<void> {
     const run = guestRuns.get(guestKey(g));
     const here = run ? (run.result.completed ? `<b>${outcome(run.result)}</b>` : `<span class="neg">${outcome(run.result)}</span>`) : '<span class="faint">test en cours…</span>';
     return `<tr><td class="nm">${g.name}</td><td>${g.home}</td><td class="num">${here}</td>` +
-      `<td class="acts"><button class="btn small" data-witness="${g.id}"${run ? '' : ' disabled'}>Faire rouler ici</button> <button class="btn small" data-seed="${g.id}">Partir de lui</button></td></tr>`;
+      `<td class="acts"><button class="btn small" data-witness="${g.id}"${run ? '' : ' disabled'}>Faire rouler ici</button> <button class="btn small" data-seed="${g.id}">Partir de lui</button>` +
+      `${g.saved ? ` <button class="btn small" data-remove="${g.id}" title="Retirer ce pilote sauvé">Retirer</button>` : ''}</td></tr>`;
   }).join('');
   $('guest-empty').hidden = list.length > 0;
   $('guest-rows').closest('.tablewrap')!.toggleAttribute('hidden', list.length === 0);
@@ -687,6 +725,11 @@ async function renderGuests(): Promise<void> {
 $('guest-rows').addEventListener('click', (e) => {
   const btn = (e.target as HTMLElement).closest('button');
   if (!btn) return;
+  if (btn.dataset.remove) {
+    LS.set('saved-pilots', savedPilots().filter((p) => p.id !== btn.dataset.remove));
+    void renderGuests();
+    return;
+  }
   const g = guests().find((x) => x.id === (btn.dataset.witness ?? btn.dataset.seed));
   if (!g) return;
   if (btn.dataset.witness) {
@@ -696,7 +739,7 @@ $('guest-rows').addEventListener('click', (e) => {
     S.ghostMode = 'guest';
     $<HTMLSelectElement>('ghost').value = 'guest';
     void refreshGhost();
-    $('guest-msg').textContent = `Le ${g.label} roule ici en fantôme bleu, à côté de tes pilotes en direct comme en replay.`;
+    $('guest-msg').textContent = `Le ${g.label} roule ici en fantôme jaune, à côté de tes pilotes en direct comme en replay.`;
     $('view3d').scrollIntoView({ behavior: 'smooth', block: 'center' });
   } else {
     S.running = false;

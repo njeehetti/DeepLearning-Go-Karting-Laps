@@ -32,7 +32,7 @@ function makeKart(ghost: boolean, color: number): KartModel {
   const root = new THREE.Group();
   const body = new THREE.Group();
   root.add(body);
-  const mk = (c: number) => (ghost ? new THREE.MeshBasicMaterial({ color: 0x9fd3ff, transparent: true, opacity: 0.32, depthWrite: false }) : new THREE.MeshLambertMaterial({ color: c }));
+  const mk = (c: number) => (ghost ? new THREE.MeshBasicMaterial({ color: 0xffd83a, transparent: true, opacity: 0.45, depthWrite: false }) : new THREE.MeshLambertMaterial({ color: c }));
   const paint = mk(color);
   const dark = mk(0x202428);
   const tyre = mk(0x111213);
