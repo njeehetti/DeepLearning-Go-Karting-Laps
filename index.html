@@ -199,6 +199,72 @@
 
         <section class="view" data-view="cerveau" hidden>
           <div class="grid3">
+            <section class="panel span3" aria-labelledby="h-learn" id="learn">
+              <div class="panel-h">
+                <h2 id="h-learn">Comment le pilote apprend</h2>
+                <div class="tabs" role="group" aria-label="Méthode d'apprentissage">
+                  <button data-learn="evo" aria-pressed="true">Par évolution</button>
+                  <button data-learn="bp" aria-pressed="false">Par rétropropagation</button>
+                </div>
+              </div>
+              <div class="body" data-learn-pane="evo">
+                <ol class="how">
+                  <li><b>1 · Varier</b><span>256 copies du cerveau moyen, chacune avec ses 771 poids décalés un peu au hasard.</span></li>
+                  <li><b>2 · Essayer</b><span>chaque copie fait rouler son kart ; on les classe selon la distance, le chrono et les sorties de piste.</span></li>
+                  <li><b>3 · Garder</b><span>la moyenne des poids glisse vers les meilleures copies. Aucune dérivée n’est calculée : c’est une optimisation sans gradient.</span></li>
+                </ol>
+                <p class="learn-status" id="evo-status"></p>
+                <div class="learn-grid">
+                  <div class="learn-map">
+                    <div class="tabs small" role="group" aria-label="Ce que montre la carte">
+                      <button data-evo-mode="value" aria-pressed="true" title="Valeur de chaque poids du cerveau moyen">Valeur</button>
+                      <button data-evo-mode="change" aria-pressed="false" title="De combien chaque poids a bougé à la dernière génération">Changement</button>
+                      <button data-evo-mode="explore" aria-pressed="false" title="Jusqu’où les variantes s’écartent de la moyenne pour ce poids">Exploration</button>
+                    </div>
+                    <canvas class="wmap" id="evo-map" aria-label="Carte des 771 poids du réseau"></canvas>
+                    <p class="note" id="evo-hover">Survole une case pour lire ce poids.</p>
+                  </div>
+                  <div class="learn-side">
+                    <p class="label">Convergence</p>
+                    <canvas class="mini-chart" id="evo-curve" aria-label="Mouvement moyen des poids et largeur d’exploration par génération"></canvas>
+                    <p class="note"><b class="acc-ink">Ambre</b> : de combien les poids bougent à chaque génération. <b class="ghost-ink">Bleu</b> : la largeur des essais autour de la moyenne. Les deux baissent quand le pilote a trouvé sa façon de conduire.</p>
+                    <p class="note">Sur la carte, ambre = poids positif, bleu = négatif, plus c’est vif plus il est grand. Une colonne est un neurone caché : en haut ce qu’il écoute, en bas ce qu’il commande.</p>
+                  </div>
+                </div>
+              </div>
+              <div class="body" data-learn-pane="bp" hidden>
+                <ol class="how">
+                  <li><b>1 · Montrer</b><span>le professeur, le champion trouvé par l’évolution, fait un tour : chaque instant devient un exemple « dans cette situation, voilà ses commandes ».</span></li>
+                  <li><b>2 · Corriger</b><span>l’élève roule ; partout où il se met, le professeur dit ce qu’il aurait fait. Ces corrections s’ajoutent aux exemples.</span></li>
+                  <li><b>3 · Rétropropager</b><span>l’écart entre ses commandes et celles du professeur remonte le réseau, des sorties vers les entrées : chaque poids reçoit son gradient (le sens qui réduit l’erreur) et fait un petit pas.</span></li>
+                </ol>
+                <div class="learn-actions">
+                  <button class="btn primary" id="bp-run">Lancer les leçons</button>
+                  <button class="btn" id="bp-reset" title="Un nouvel élève, aux poids tirés au hasard">Nouvel élève</button>
+                  <span class="note" id="bp-teacher"></span>
+                </div>
+                <p class="learn-status" id="bp-status"></p>
+                <div class="learn-grid">
+                  <div class="learn-map">
+                    <div class="tabs small" role="group" aria-label="Ce que montre la carte">
+                      <button data-bp-mode="value" aria-pressed="true" title="Valeur de chaque poids de l’élève">Valeur</button>
+                      <button data-bp-mode="grad" aria-pressed="false" title="Taille moyenne du gradient de chaque poids pendant la leçon">Gradient</button>
+                      <button data-bp-mode="step" aria-pressed="false" title="Le dernier pas fait par chaque poids (optimiseur Adam)">Mise à jour</button>
+                    </div>
+                    <canvas class="wmap" id="bp-map" aria-label="Carte des 771 poids de l’élève"></canvas>
+                    <p class="note" id="bp-hover">Survole une case pour lire ce poids.</p>
+                  </div>
+                  <div class="learn-side">
+                    <p class="label">Dernier essai de l’élève</p>
+                    <canvas class="mini-track" id="bp-track" aria-label="Trajectoires de l’élève et du professeur"></canvas>
+                    <p class="note"><b class="ghost-ink">Bleu</b> : le tour du professeur. <b class="acc-ink">Ambre</b> : l’élève, le point marque où il s’est arrêté.</p>
+                    <p class="label">Erreur</p>
+                    <canvas class="mini-chart" id="bp-loss" aria-label="Erreur d’imitation à chaque pas de gradient"></canvas>
+                    <p class="note">L’erreur peut remonter : quand l’élève va plus loin, il découvre des situations nouvelles, plus dures à copier.</p>
+                  </div>
+                </div>
+              </div>
+            </section>
             <section class="panel span2" aria-labelledby="h-nn">
               <div class="panel-h"><h2 id="h-nn">Réseau du meilleur pilote</h2><span class="meta">activations en direct pendant le replay</span></div>
               <div class="nn" id="nn"></div>

@@ -17,6 +17,7 @@ import { Trainer, type Brain, type GenStats } from '../ai/trainer';
 import type { ToolRequest, ToolResponse } from '../workers/tool.worker';
 import { drawEvo, drawTel, fmtLap, type TelGeom } from './charts';
 import { NnView } from './nnview';
+import { initLearn } from './learn';
 import { Scene3D, type CamMode } from './scene';
 import { applyTheme, skylineCanvas, themeOf } from './themes';
 import { WEATHERS, WEATHER_IDS, type Weather } from '../sim/weather';
@@ -203,6 +204,15 @@ new ResizeObserver(() => {
   scene.resize(r.width, r.height);
 }).observe($('view3d'));
 const nn = new NnView($('nn'));
+// how the driver learns: the evolving weights, and a student copying the best driver by backpropagation
+const learn = initLearn({
+  track,
+  world: () => worldOf(S.kartId),
+  teachers: () => [
+    ...(S.best ? [{ label: 'meilleur pilote de ce circuit', params: S.best.params }] : []),
+    ...(GENERALIST ? [{ label: 'pilote généraliste', params: GENERALIST.params }] : []),
+  ],
+});
 
 // ---------- header / meta ----------
 function updateHeader(): void {
@@ -397,6 +407,7 @@ async function ensureTrainer(fresh = false): Promise<Trainer> {
     const tr = new Trainer(S.pool, { world, lambda: S.pop, seed: (Math.random() * 1e9) | 0, L: track.L, startSpeed, x0: x0?.params, sigma0: stored && !seed ? 0.15 : x0 ? 0.25 : 0.5 });
     (tr as Trainer & { key?: string }).key = key;
     S.trainer = tr;
+    learn.resetEvo();
     S.computeMs = 0;
   }
   return S.trainer;
@@ -461,6 +472,7 @@ function onGen(tr: Trainer, s: GenStats): void {
   drawEvoNow();
   renderGens(tr);
   updateHeader();
+  learn.onGen(tr.es);
 }
 function drawEvoNow(): void {
   if (!S.trainer) return;
@@ -498,6 +510,7 @@ async function setKart(k: KartId): Promise<void> {
   LS.set('kart', k);
   S.trainer = null;
   S.guest = null;
+  learn.resetStudent();
   updateHeader();
   updateMeta();
   await setBest(brainOf(brainKey(k)));
@@ -513,6 +526,7 @@ async function setWeather(w: Weather): Promise<void> {
   LS.set('weather', w);
   S.trainer = null;
   S.guest = null;
+  learn.resetStudent();
   scene.setWeather(w);
   $('weather-note').textContent = w === 'sec' ? '' : WEATHERS[w].note;
   updateHeader();
@@ -581,6 +595,7 @@ $('weight').addEventListener('change', () => {
   S.running = false;
   S.trainer = null;
   guestRuns.clear();
+  learn.resetStudent();
   msg.textContent = `Les pilotes roulent maintenant à ${kg} kg. Le tour parfait est recalculé ; les cerveaux entraînés à un autre poids sont gardés à part.`;
   updateMeta();
   void setBest(brainOf(brainKey(S.kartId)));
@@ -1025,6 +1040,7 @@ function showView(v: string): void {
     sizeMinimap();
     drawEvoNow();
     drawTelNow(-1);
+    learn.redraw();
   });
 }
 window.addEventListener('hashchange', () => showView(location.hash.slice(1)));

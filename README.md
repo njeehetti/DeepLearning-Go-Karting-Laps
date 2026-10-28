@@ -57,7 +57,7 @@ npm run dev        # http://localhost:5173
 Clique **Lancer l'entraînement**. La première génération ne sait pas rouler : les pilotes découvrent la piste et sortent presque tous. Le premier tour bouclé arrive après une vingtaine de générations ; laisse tourner quelques minutes pour voir le temps descendre. Le meilleur cerveau est gardé dans le navigateur, et s'exporte en JSON depuis la vue Cerveau.
 
 ```bash
-npm test           # 81 tests : physique, circuits, IA, non-régression v1, calage
+npm test           # 88 tests : physique, circuits, IA, non-régression v1, calage
 npm run test:slow  # non-régression complète de la v1 (≈ 1 min)
 npm run build      # site statique dans dist/
 npx tsx scripts/train-headless.ts --track genk --kart k270 --minutes 10   # entraînement sans interface
@@ -77,6 +77,10 @@ npx tsx scripts/train-headless.ts --eval <cerveau.json>                   # tour
 **Limites de piste** : les vibreurs font partie de la piste. Un tour bouclé avec une roue dans l'herbe n'a pas de chrono (il ne compte ni pour le record ni pour l'apprentissage), comme un tour supprimé en course ; quatre roues dans l'herbe plus d'une demi-seconde arrêtent l'essai. Un pilote trop lent pour finir le tour dans le temps imparti est aussi arrêté. Il décide 30 fois par seconde de la direction, du gaz et du frein, avec l'inertie des mains sur le volant. Comme un vrai pilote, il n'a qu'un pied droit : dès qu'il freine, il lâche les gaz.
 
 **L'apprentissage** est une neuroévolution (sep-CMA-ES) : à chaque génération, 256 variantes du cerveau roulent en parallèle dans des Web Workers ; les meilleures orientent la génération suivante. Le meilleur pilote reroule à chaque génération, donc le record ne recule jamais. D'abord finir le tour, ensuite aller vite ; scier le volant ou tapoter les pédales coûte des points.
+
+**Voir le cerveau apprendre** : la vue Cerveau s'ouvre sur « Comment le pilote apprend », avec deux méthodes côte à côte. Chaque case de la carte est un poids (une colonne par neurone caché : en haut ce qu'il écoute, en bas ce qu'il commande).
+- *Par évolution* : la carte suit la moyenne des 256 variantes génération par génération. On peut afficher la valeur des poids, leur changement depuis la génération précédente, ou la largeur des essais autour de la moyenne. Aucune dérivée n'est calculée.
+- *Par rétropropagation* : un élève aux poids tirés au hasard copie un professeur, le plus rapide sur ce circuit entre le meilleur pilote entraîné ici et le généraliste. Le professeur fait un tour de démonstration, puis l'élève roule et le professeur dit à chaque instant ce qu'il aurait fait (DAgger). L'écart remonte le réseau et chaque poids fait un pas d'Adam. On voit les poids, leur gradient et le dernier pas, le tour de l'élève sur la carte et la courbe d'erreur. Avec le généraliste comme professeur, l'élève boucle son premier tour propre en 6 à 20 leçons environ selon le circuit, à quelques dixièmes de son professeur.
 
 **Le tour parfait** est une référence quasi-statique : la meilleure trajectoire trouvée pour ce kart réduit à un point, avec son adhérence, son moteur et son freinage. Il sert de fantôme et de référence pour le temps perdu par virage ; un pilote bien entraîné dans le modèle complet peut le battre de quelques dixièmes.
 
@@ -100,8 +104,8 @@ La vitesse de pointe (80 km/h) et la transmission (variateur) sont des hypothès
 |---|---|
 | `src/track/` | Format de circuit, import GPX/GeoJSON/Overpass, géométrie, virages, pont, requêtes spatiales |
 | `src/sim/` | Physique pure (sans DOM) : modèle dynamique, moteur, tour parfait, calage, solveur et AG de la v1 |
-| `src/ai/` | Réseau, capteurs, épisodes, sep-CMA-ES, pool de workers, enregistrement des tours |
-| `src/workers/` | Workers du navigateur : simulation et outils (replay, tour parfait, calage) |
+| `src/ai/` | Réseau, capteurs, épisodes, sep-CMA-ES, rétropropagation et imitation, pool de workers, enregistrement des tours |
+| `src/workers/` | Workers du navigateur : simulation, leçons de l'élève, outils (replay, tour parfait, calage) |
 | `src/ui/` | Interface : vues, scène 3D (Three.js), graphiques, réseau |
 | `data/tracks/` | Circuits au format `TrackDef` |
 | `legacy/` | La v1, intacte (lien depuis la vue Kart) |
