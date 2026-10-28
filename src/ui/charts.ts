@@ -91,7 +91,7 @@ export function drawEvo(cv: HTMLCanvasElement, hist: GenStats[], theory: number)
   ctx.stroke();
   ctx.restore();
   const last = hist[hist.length - 1];
-  return `record ${fmtLap(rec)} · tours bouclés ${Math.round(last.completion * 100)} % · σ ${last.sigma.toFixed(3)}`;
+  return `record ${fmtLap(rec)} · tours bouclés ${Math.round(last.completion * 100)} % à la génération ${last.gen + 1}`;
 }
 
 export interface TelGeom {

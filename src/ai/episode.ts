@@ -22,7 +22,7 @@ export interface EpisodeSpec {
   track?: number;
 }
 
-export type EndReason = 'tour' | 'mur' | 'herbe' | 'immobile' | 'contresens' | 'temps';
+export type EndReason = 'tour' | 'mur' | 'herbe' | 'immobile' | 'lent' | 'contresens' | 'temps';
 
 export interface EpisodeResult {
   fitness: number;
@@ -93,6 +93,8 @@ export function runEpisode(sim: KartSim, pilot: Pilot, params: ArrayLike<number>
   let prevThr = 0;
   let prevBrk = 0;
   const maxSteps = Math.round(spec.maxTime / DT);
+  /** Pace (m/s) needed to finish the lap within maxTime: a driver crawling below it can never finish. */
+  const pace = L / spec.maxTime;
   for (let k = 0; k < maxSteps; k++) {
     const decided = k % DECISION_EVERY === 0;
     if (decided) {
@@ -133,6 +135,11 @@ export function runEpisode(sim: KartSim, pilot: Pilot, params: ArrayLike<number>
       bestAt = st.t;
     } else if (st.t - bestAt > 3) {
       end = 'immobile';
+      break;
+    }
+    // 5 s of grace for the start, then the lap must stay reachable before the time cap
+    if (st.t > 10 && best < (st.t - 5) * pace) {
+      end = 'lent';
       break;
     }
     if (st.dist < best - 10) {

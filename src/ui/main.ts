@@ -65,8 +65,8 @@ applyTheme(THEME);
   sky.setAttribute('aria-hidden', 'true');
   host.appendChild(sky);
 }
-// v3: 22-input network (braking need, speed margin, acceleration, brake pedal); older brains are ignored
-const brainKeyOf = (id: string, k: KartId, w: Weather) => `brain3:${id}:${k}:${SCALE}${w === 'sec' ? '' : ':' + w}`;
+// v4: 20-input network that does not know the corner speeds; older brains are ignored
+const brainKeyOf = (id: string, k: KartId, w: Weather) => `brain4:${id}:${k}:${SCALE}${w === 'sec' ? '' : ':' + w}`;
 const brainKey = (k: KartId, w: Weather = S.weather) => brainKeyOf(DEF.id, k, w);
 /** Theoretical laps are cached per kart and track conditions. */
 const thKey = (k: KartId, w: Weather = S.weather) => `${k}:${w}`;
@@ -110,6 +110,8 @@ const S = {
   pose: null as { x: number; y: number } | null,
   cam: 'heli' as CamMode,
   play: { t: 0, playing: true, rate: 1 },
+  /** 'follow': training waits until the live view has shown each generation; 'fast': full speed. */
+  pace: (LS.get<string>('pace') === 'fast' ? 'fast' : 'follow') as 'follow' | 'fast',
   live: {
     traj: [] as (Float32Array | undefined)[],
     best: -1,
@@ -135,8 +137,8 @@ function asDriver(b: Brain | null): Brain | null {
   return b && params ? { ...b, shape: DRIVER_SHAPE.sizes, params } : null;
 }
 const brainOf = (k: string) => asDriver(LS.get<Brain>(k));
-/** Driver trained on every circuit at once: the starting point wherever nothing was trained yet. */
-const GENERALIST = asDriver(generalist as Brain)!;
+/** Driver trained on every circuit at once, offered as a guest (null if its network is out of date). */
+const GENERALIST = asDriver(generalist as Brain);
 
 function calibOf(k: KartId): Calibration {
   return LS.get<Calibration>(calibKey(k)) ?? LS.get<Calibration>(`calib:lyl:${k}`) ?? DEFAULT_CALIBRATION[k];
@@ -212,10 +214,12 @@ function updateHeader(): void {
   const gap = Number.isFinite(best) && th ? best - th.lap : NaN;
   $('t-gap').innerHTML = Number.isFinite(gap)
     ? `${gap > 0 ? `<span class="neg">+${fr(gap, 2)} s</span> sur le tour parfait` : `<span class="pos">−${fr(-gap, 2)} s</span> sous le tour parfait`}${Number.isFinite(you) ? ` · ${best <= you ? `<span class="pos">−${fr(you - best, 2)} s</span> sous ton record` : `+${fr(best - you, 2)} s sur ton record`}` : ''}`
-    : 'Pas encore de tour propre';
+    : 'Pas encore de tour sans sortie de piste';
   const gens = S.trainer?.history.length ?? 0;
   $('finding').innerHTML = !S.best
-    ? `Lance l'entraînement : ${S.pop} pilotes vont apprendre la piste en parallèle.`
+    ? gens
+      ? `Génération ${gens} : les pilotes apprennent encore à boucler un tour sans sortir de la piste.`
+      : `${S.pop} pilotes débutants vont découvrir ce circuit. Lance l'entraînement pour les voir apprendre.`
     : `Meilleur tour IA <b>${fmtLap(best)}</b>${th ? (gap > 0 ? `, à <b>${fr(gap, 2)} s</b> du tour parfait` : `, <b>${fr(-gap, 2)} s</b> sous le tour parfait`) : ''}${S.sheet.length && S.theorySheet.length ? ` · le plus de temps perdu en <b>${worstCorner()}</b>` : ''}${gens ? ` · génération ${gens}` : ''}.`;
   const pill = $('status');
   pill.className = 'status' + (S.running ? ' on' : '');
@@ -223,6 +227,9 @@ function updateHeader(): void {
   $('run').textContent = S.running ? 'Mettre en pause' : S.trainer && S.trainer.history.length ? 'Reprendre l’entraînement' : 'Lancer l’entraînement';
   $('k270').setAttribute('aria-pressed', String(S.kartId === 'k270'));
   $('k390').setAttribute('aria-pressed', String(S.kartId === 'k390'));
+  // the guide lights up the step the user is at: choose, train, then compare once a driver exists
+  const step = S.best ? 3 : S.running || gens ? 2 : 1;
+  document.querySelectorAll<HTMLElement>('#steps li').forEach((li) => li.classList.toggle('on', li.dataset.step === String(step)));
 }
 // ---------- circuit picker (switching rebuilds everything, so it reloads the page) ----------
 {
@@ -319,7 +326,7 @@ async function refreshGhost(): Promise<void> {
       const r = await ask({ type: 'record', world: worldOf(S.kartId), params: Array.from(old.params) });
       if (r.type === 'record') {
         S.ghost = r.run;
-        S.ghostLabel = `Génération ${old.gen} : ${fmtLap(r.run.result.lapTime)}`;
+        S.ghostLabel = `Génération ${old.gen + 1} : ${fmtLap(r.run.result.lapTime)}`;
       }
     } else S.ghostLabel = 'Pas encore 50 générations d’écart';
   } else if (S.ghostMode === 'other') {
@@ -398,6 +405,7 @@ async function loop(): Promise<void> {
     const s = await tr.step();
     S.computeMs += s.wallMs;
     onGen(tr, s);
+    await waitForViewer(tr);
     if ((tr.best?.lap ?? Infinity) < before - 1e-6 && tr.best) {
       const brain = tr.brain()!;
       const prev = brainOf(brainKey(S.kartId));
@@ -420,6 +428,12 @@ function startLive(g: LiveGen): void {
   S.live.hints.fill(0);
   S.live.dist.fill(0);
   S.live.init.fill(0);
+}
+/** "Chaque génération": the next generation is only computed once the viewer has seen this one race.
+ *  Fast mode, another view, the replay or a hidden tab let the training run at full speed. */
+async function waitForViewer(tr: Trainer): Promise<void> {
+  while (S.running && S.trainer === tr && S.pace === 'follow' && S.mode === 'live' && S.view === 'piste' && !document.hidden && !liveDone())
+    await new Promise((r) => setTimeout(r, 100));
 }
 /** A generation is shown until every driver has finished (or crashed), plus a short pause. */
 function liveDone(): boolean {
@@ -589,7 +603,7 @@ interface Guest {
   brain: Brain;
 }
 function guests(): Guest[] {
-  const out: Guest[] = [{ id: 'generaliste', label: 'pilote généraliste', name: 'Généraliste', home: 'les 9 circuits à la fois', brain: GENERALIST }];
+  const out: Guest[] = GENERALIST ? [{ id: 'generaliste', label: 'pilote généraliste', name: 'Généraliste', home: 'les 9 circuits à la fois', brain: GENERALIST }] : [];
   for (const t of TRACKS) {
     if (t.id === DEF.id) continue;
     const b = brainOf(brainKeyOf(t.id, S.kartId, S.weather)) ?? brainOf(brainKeyOf(t.id, S.kartId, 'sec'));
@@ -608,9 +622,10 @@ async function renderGuests(): Promise<void> {
     const run = guestRuns.get(guestKey(g));
     const here = run ? (run.result.completed ? `<b>${outcome(run.result)}</b>` : `<span class="neg">${outcome(run.result)}</span>`) : '<span class="faint">test en cours…</span>';
     return `<tr><td class="nm">${g.name}</td><td>${g.home}</td><td class="num">${here}</td>` +
-      `<td class="acts"><button class="btn small" data-witness="${g.id}"${run ? '' : ' disabled'}>Témoin</button> <button class="btn small" data-seed="${g.id}">Partir de lui</button></td></tr>`;
+      `<td class="acts"><button class="btn small" data-witness="${g.id}"${run ? '' : ' disabled'}>Faire rouler ici</button> <button class="btn small" data-seed="${g.id}">Partir de lui</button></td></tr>`;
   }).join('');
-  $('guest-empty').hidden = list.length > 1;
+  $('guest-empty').hidden = list.length > 0;
+  $('guest-rows').closest('.tablewrap')!.toggleAttribute('hidden', list.length === 0);
   if (guestsBusy) return;
   // one lap at a time, re-rendering after each so results appear as they come
   const todo = list.find((g) => !guestRuns.has(guestKey(g)));
@@ -635,13 +650,14 @@ $('guest-rows').addEventListener('click', (e) => {
     S.ghostMode = 'guest';
     $<HTMLSelectElement>('ghost').value = 'guest';
     void refreshGhost();
-    $('guest-msg').textContent = `Témoin : le ${g.label}. Il roule en fantôme bleu dans la vue Piste, en replay comme à côté des pilotes en entraînement.`;
+    $('guest-msg').textContent = `Le ${g.label} roule ici en fantôme bleu, à côté de tes pilotes en direct comme en replay.`;
+    $('view3d').scrollIntoView({ behavior: 'smooth', block: 'center' });
   } else {
     S.running = false;
     S.trainer = null;
     S.seed = { label: g.label, brain: g.brain };
     updateHeader();
-    $('guest-msg').textContent = `Le prochain entraînement partira du ${g.label}. Lance-le depuis la vue Piste.`;
+    $('guest-msg').textContent = `Le prochain entraînement partira du ${g.label} au lieu de débutants. Lance-le en haut de la page.`;
   }
 });
 
@@ -694,6 +710,18 @@ function setCam(c: CamMode): void {
   scene.setCam(c);
   document.querySelectorAll('[data-cam]').forEach((x) => x.setAttribute('aria-pressed', String(x.getAttribute('data-cam') === c)));
 }
+function setPace(p: 'follow' | 'fast'): void {
+  S.pace = p;
+  LS.set('pace', p);
+  document.querySelectorAll('[data-pace]').forEach((x) => x.setAttribute('aria-pressed', String(x.getAttribute('data-pace') === p)));
+}
+setPace(S.pace);
+document.querySelectorAll<HTMLButtonElement>('[data-pace]').forEach((b) => b.addEventListener('click', () => setPace(b.dataset.pace as 'follow' | 'fast')));
+$('h-catch').addEventListener('click', () => {
+  if (S.live.pending) startLive(S.live.pending);
+  else S.live.el = 1e6; // ends the generation on screen, the training computes the next one
+});
+$('go-invites').addEventListener('click', () => $('invites').scrollIntoView({ behavior: 'smooth', block: 'start' }));
 $('play').addEventListener('click', () => {
   S.play.playing = !S.play.playing;
   $('play').textContent = S.play.playing ? 'Pause' : 'Lecture';
@@ -848,15 +876,25 @@ function liveHud(leader: number, v: number, el: number, thr: number, brk: number
   const n = L.traj.filter(Boolean).length;
   $('h-spd').textContent = leader >= 0 ? String(kmh(v)) : '–';
   pedals(leader >= 0 ? thr : 0, leader >= 0 ? brk : 0);
-  const training = S.trainer && S.trainer.es.gen - 1 > L.gen ? ` · entraînement : génération ${S.trainer.es.gen}` : '';
-  $('h-lap').textContent = `Génération ${L.gen} · ${n} pilotes · ${fmtLap(el).slice(0, -2)}${training}`;
+  // generations are numbered from 1 everywhere in the interface
+  const behind = !!S.trainer && S.trainer.es.gen - 1 > L.gen;
+  const training = behind ? ` · l’entraînement en est à la génération ${S.trainer!.es.gen}` : '';
+  $('h-lap').textContent = `Génération ${L.gen + 1} · ${n} pilotes · ${fmtLap(el).slice(0, -2)}${training}`;
+  // follow mode: skip the slow drivers of this generation; fast mode: jump to the latest one computed
+  const btn = $('h-catch');
+  btn.hidden = S.pace === 'follow' ? !S.running : !L.pending;
+  btn.textContent = S.pace === 'follow' ? 'Génération suivante' : 'Voir la dernière génération';
   $('h-corner').textContent = leader >= 0 ? `En tête : pilote n°${leader + 1}${leader === L.best ? ' (meilleur tour de la génération)' : ''}` : '–';
   let delta = '';
   if (Number.isFinite(L.lap) && Number.isFinite(L.prevLap)) {
     const d = L.lap - L.prevLap;
-    delta = d < -0.0005 ? ` · −${fr(-d, 3)} s vs génération ${L.gen - 1}` : ` · égal à la génération ${L.gen - 1}`;
+    delta = d < -0.0005 ? ` · −${fr(-d, 3)} s sur la génération ${L.gen}` : ` · égal à la génération ${L.gen}`;
   }
-  $('h-advice').textContent = Number.isFinite(L.lap) ? `Meilleur tour de cette génération : ${fmtLap(L.lap)}${delta}` : 'Aucun tour propre dans cette génération pour l’instant';
+  $('h-advice').textContent = Number.isFinite(L.lap)
+    ? `Meilleur tour de cette génération : ${fmtLap(L.lap)}${delta}`
+    : L.gen === 0
+      ? 'Première génération : ils découvrent la piste et ne savent pas encore rouler'
+      : 'Personne n’a encore bouclé un tour sans sortir de la piste';
   $('h-glat').textContent = `${Math.round(Math.max(0, Math.min(1, L.dist[leader] / track.L)) * 100)} %`;
   $('h-glat-l').textContent = 'du tour';
 }
@@ -949,8 +987,8 @@ function tick(now: number): void {
 // ---------- views (icon rail) ----------
 function showView(v: string): void {
   if (v === 'analyse') void renderWeather(true);
-  if (v === 'cerveau') void renderGuests();
   if (!document.querySelector(`.view[data-view="${v}"]`)) v = 'piste';
+  if (v === 'piste') void renderGuests();
   S.view = v;
   document.querySelectorAll<HTMLElement>('.view').forEach((el) => (el.hidden = el.dataset.view !== v));
   document.querySelectorAll<HTMLElement>('.nav').forEach((a) => (a.dataset.view === v ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current')));
@@ -973,7 +1011,7 @@ function renderGens(tr: Trainer): void {
     const prev = i > 0 ? h[i - 1].bestLap : NaN;
     const d = Number.isFinite(s.bestLap) && Number.isFinite(prev) ? s.bestLap - prev : NaN;
     const dTxt = Number.isFinite(d) ? (d < -0.0005 ? `−${fr(-d, 3)}` : '=') : '–';
-    rows.push(`<li><span>Génération ${s.gen}</span><span>${fmtLap(s.bestLap)}</span><span class="d${d < -0.0005 ? ' pos' : ''}">${dTxt}</span></li>`);
+    rows.push(`<li><span>Génération ${s.gen + 1}</span><span>${fmtLap(s.bestLap)}</span><span class="d${d < -0.0005 ? ' pos' : ''}">${dTxt}</span></li>`);
   }
   $('gen-list').innerHTML = rows.join('') || '<li class="empty">Aucune génération pour l’instant</li>';
 }
@@ -994,7 +1032,7 @@ function worstCorner(): string {
 function renderStrip(): void {
   const el = $('strip');
   if (!S.sheet.length) {
-    el.innerHTML = '<p class="empty">Le premier tour propre remplira cette bande : un bloc par virage, rouge là où le pilote perd du temps.</p>';
+    el.innerHTML = '<p class="empty">Le premier tour sans sortie de piste remplira cette bande : un bloc par virage, rouge là où le pilote perd du temps.</p>';
     return;
   }
   const losses = S.sheet.map((r, i) => (S.theorySheet[i] ? r.sectorTime - S.theorySheet[i].sectorTime : NaN));
