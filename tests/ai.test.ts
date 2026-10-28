@@ -17,11 +17,11 @@ const world: WorldSpec = {
 };
 
 describe('réseau', () => {
-  it('a 22 entrées, 32 neurones cachés et 3 sorties', () => {
-    expect(DRIVER_SHAPE.sizes).toEqual([22, 32, 3]);
-    expect(N_OBS).toBe(22);
-    expect(paramCount(DRIVER_SHAPE)).toBe(32 * 23 + 3 * 33);
-    const out = new Mlp().forward(new Float64Array(paramCount(DRIVER_SHAPE)).fill(0.1), new Float64Array(22).fill(0.5));
+  it('a 20 entrées, 32 neurones cachés et 3 sorties', () => {
+    expect(DRIVER_SHAPE.sizes).toEqual([20, 32, 3]);
+    expect(N_OBS).toBe(20);
+    expect(paramCount(DRIVER_SHAPE)).toBe(32 * 21 + 3 * 33);
+    const out = new Mlp().forward(new Float64Array(paramCount(DRIVER_SHAPE)).fill(0.1), new Float64Array(20).fill(0.5));
     expect(out).toHaveLength(3);
     expect(Number.isFinite(out[0])).toBe(true);
   });
@@ -33,7 +33,7 @@ describe('réseau', () => {
     expect(toDriverShape(p)).toHaveLength(paramCount(DRIVER_SHAPE));
     expect(toDriverShape([1, 2, 3])).toBeNull();
     expect(q).toHaveLength(paramCount(big));
-    const x = Float64Array.from({ length: 22 }, () => r() * 2 - 1);
+    const x = Float64Array.from({ length: 20 }, () => r() * 2 - 1);
     const a = Array.from(new Mlp(LEGACY_SHAPE).forward(p, x));
     const b = Array.from(new Mlp(big).forward(q, x));
     b.forEach((v, k) => expect(v).toBeCloseTo(a[k], 12));

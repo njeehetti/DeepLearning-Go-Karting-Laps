@@ -29,7 +29,7 @@ export interface EpisodeResult {
   /** Distance covered along the centreline (m). */
   progress: number;
   completed: boolean;
-  /** Completed without any wheel on the grass. */
+  /** Completed without any wheel on the grass: the only laps whose time counts (track limits). */
   clean: boolean;
   lapTime: number;
   /** Wheel-seconds on the grass. */
@@ -56,8 +56,6 @@ export class Pilot {
   readonly obs = new Float64Array(N_OBS);
   readonly rays = new Float64Array(9);
   readonly inp: KartInput = { steer: 0, throttle: 0, brake: 0 };
-  /** Theoretical centreline speed (m/s) of the circuit being driven, see observe(). */
-  profile: Float64Array | null = null;
   private steer = 0;
 
   constructor(shape?: MlpShape) {
@@ -69,7 +67,7 @@ export class Pilot {
   }
 
   decide(q: TrackQuery, st: KartState, params: ArrayLike<number>, deltaMax = 0.4): KartInput {
-    observe(q, st, this.obs, this.rays, deltaMax, this.profile);
+    observe(q, st, this.obs, this.rays, deltaMax);
     controlsFromOutput(this.mlp.forward(params, this.obs), this.inp);
     this.steer += (this.inp.steer - this.steer) * STEER_ALPHA;
     this.inp.steer = this.steer;
@@ -145,7 +143,9 @@ export function runEpisode(sim: KartSim, pilot: Pilot, params: ArrayLike<number>
   const completed = end === 'tour';
   const progress = completed ? L : Math.max(0, Math.min(L, Math.max(best, st.dist)));
   let fitness = progress - 3 * offTime - STEER_COST * steerSum - PEDAL_COST * pedalSum;
-  if (completed) fitness += LAP_BONUS + spec.timeWeight * 10 * (T_REF - lapTime);
+  // track limits: a lap with a wheel on the grass is finished but its time is deleted, as in a race, so
+  // cutting a corner never pays
+  if (completed) fitness += LAP_BONUS + (everOff ? 0 : spec.timeWeight * 10 * (T_REF - lapTime));
   else if (end === 'mur') fitness -= 20;
   return { fitness, progress, completed, clean: completed && !everOff, lapTime, offTime, end, steerActivity: steerSum / Math.max(st.t, 1e-3) };
 }

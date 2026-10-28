@@ -8,9 +8,9 @@ export interface MlpShape {
 }
 
 // 32 hidden neurons: with 16, one brain could not learn every circuit (generalist training stalled on 5 of 9)
-export const DRIVER_SHAPE: MlpShape = { sizes: [22, 32, 3] };
-/** Network of the brains saved before the 32-neuron one. */
-export const LEGACY_SHAPE: MlpShape = { sizes: [22, 16, 3] };
+export const DRIVER_SHAPE: MlpShape = { sizes: [20, 32, 3] };
+/** Network of the brains saved before the 32-neuron one (they are not convertible since the inputs changed). */
+export const LEGACY_SHAPE: MlpShape = { sizes: [20, 16, 3] };
 
 /** Driver network with other hidden layers (same inputs and outputs). */
 export function driverShape(hidden?: number[]): MlpShape {

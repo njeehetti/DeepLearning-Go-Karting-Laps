@@ -55,7 +55,6 @@ function evalAll(params: ArrayLike<number>, shape: MlpShape): void {
   for (const id of allIds) {
     const w = new World({ ...world, track: loadTrack(id), others: undefined });
     const pilot = new Pilot(shape);
-    pilot.profile = w.profile;
     const r = runEpisode(w.sim, pilot, params, { s0: 0, d0: 0, v0: w.startSpeed(0), maxTime: 200, timeWeight: 1 });
     console.log(`  ${id.padEnd(13)} ${r.completed ? fmt(r.lapTime) : 'non bouclé (' + r.end + ', ' + r.progress.toFixed(0) + ' m)'}${r.completed && !r.clean ? ' (herbe)' : ''}`);
   }
