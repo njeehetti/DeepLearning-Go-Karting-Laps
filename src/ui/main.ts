@@ -10,6 +10,7 @@ import { KARTS, type KartId } from '../sim/karts';
 import { LIVE_STRIDE, World, type WorldSpec } from '../ai/evalCore';
 import { DRIVER_SHAPE, toDriverShape } from '../ai/mlp';
 import generalist from '../../data/brains/generaliste-k270.json';
+import sansLyl from '../../data/brains/sans-lyl-k270.json';
 import { N_OBS } from '../ai/obs';
 import { WorkerPool, type WorkerLike } from '../ai/pool';
 import { cornerSheet, indexAtDist, poseAt, type CornerSheetRow, type Pose, type Run } from '../ai/record';
@@ -144,6 +145,8 @@ function asDriver(b: Brain | null): Brain | null {
 const brainOf = (k: string) => asDriver(LS.get<Brain>(k));
 /** Driver trained on every circuit at once, offered as a guest (null if its network is out of date). */
 const GENERALIST = asDriver(generalist as Brain);
+/** Same training on the 8 other circuits, never on the LYL: shows what a driver brings to an unknown track. */
+const NEVER_LYL = asDriver(sansLyl as Brain);
 
 function calibOf(k: KartId): Calibration {
   return LS.get<Calibration>(calibKey(k)) ?? LS.get<Calibration>(`calib:lyl:${k}`) ?? DEFAULT_CALIBRATION[k];
@@ -646,6 +649,7 @@ interface Guest {
 }
 function guests(): Guest[] {
   const out: Guest[] = GENERALIST ? [{ id: 'generaliste', label: 'pilote généraliste', name: 'Généraliste', home: 'les 9 circuits à la fois', brain: GENERALIST }] : [];
+  if (NEVER_LYL) out.push({ id: 'sans-lyl', label: 'pilote qui n’a jamais vu le LYL', name: 'Jamais vu le LYL', home: 'les 8 autres circuits, à 80 kg', brain: NEVER_LYL });
   for (const t of TRACKS) {
     if (t.id === DEF.id) continue;
     const b = brainOf(brainKeyOf(t.id, S.kartId, S.weather)) ?? brainOf(brainKeyOf(t.id, S.kartId, 'sec'));
