@@ -126,6 +126,8 @@ const S = {
     prevLap: NaN,
     /** Playback time of the generation being shown (s). */
     el: 0,
+    /** Start countdown of the first generation (s left before the green light; then negative while "go" shows). */
+    countdown: 0,
     hints: new Int32Array(128),
     dist: new Float64Array(128),
     lastS: new Float64Array(128),
@@ -444,10 +446,27 @@ interface LiveGen {
   prevLap: number;
 }
 function startLive(g: LiveGen): void {
-  Object.assign(S.live, { traj: g.traj, best: g.best, gen: g.gen, lap: g.lap, prevLap: g.prevLap, el: 0, pending: null });
+  // the first generation lines up on the grid and waits for 3, 2, 1, go
+  Object.assign(S.live, { traj: g.traj, best: g.best, gen: g.gen, lap: g.lap, prevLap: g.prevLap, el: 0, pending: null, countdown: g.gen === 0 ? 3 : 0 });
   S.live.hints.fill(0);
   S.live.dist.fill(0);
   S.live.init.fill(0);
+}
+const countdownEl = $('countdown');
+countdownEl.lang = THEME.lang;
+let countdownShown = '';
+/** 3, 2, 1, then "go" for a second, in the language of the circuit's country. */
+function showCountdown(left: number): void {
+  const word = left > 0 ? THEME.countdown[3 - Math.ceil(left)] : left > -1 && S.live.gen === 0 ? THEME.countdown[3] : '';
+  if (word === countdownShown) return;
+  countdownShown = word;
+  countdownEl.hidden = !word;
+  countdownEl.textContent = word;
+  countdownEl.classList.toggle('go', left <= 0);
+  // restart the pop animation on each new word
+  countdownEl.style.animation = 'none';
+  void countdownEl.offsetWidth;
+  countdownEl.style.animation = '';
 }
 /** "Chaque génération": the next generation is only computed once the viewer has seen this one race.
  *  Fast mode, another view, the replay or a hidden tab let the training run at full speed. */
@@ -1003,7 +1022,12 @@ function tick(now: number): void {
   const live = S.mode === 'live' && S.live.traj.some(Boolean);
   if (live) {
     if (liveDone() && S.live.pending) startLive(S.live.pending);
-    if (S.play.playing) S.live.el += dt * S.play.rate;
+    if (S.play.playing) {
+      const was = S.live.countdown;
+      S.live.countdown = Math.max(-1, was - dt);
+      if (was <= 0) S.live.el += dt * S.play.rate;
+    }
+    showCountdown(S.live.countdown);
     const el = S.live.el;
     let leader = -1;
     let leaderV = 0;
@@ -1049,6 +1073,7 @@ function tick(now: number): void {
     if (frame % 3 === 0) liveHud(leader, leaderV, el, leaderThr, leaderBrk);
   } else {
     scene.setCrowd([], -1);
+    showCountdown(0);
   }
   if (!live && S.run) {
     const run = S.run;

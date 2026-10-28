@@ -120,6 +120,11 @@ input[type=range] { accent-color: var(--accent); }
 .view3d { position: relative; height: clamp(360px, 58vh, 640px); background: #05080a; }
 .view3d #c3d { display: block; width: 100%; height: 100%; touch-action: none; }
 .no3d { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; padding: 20px; color: var(--muted); text-align: center; }
+.countdown { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; font: 800 clamp(56px, 12vw, 132px)/1 var(--font-display); color: #fff; text-shadow: 0 4px 24px rgb(0 0 0 / 0.6); animation: count-pop 0.9s ease-out both; }
+.countdown[hidden] { display: none; }
+.countdown.go { color: var(--positive); }
+@keyframes count-pop { from { transform: scale(1.6); opacity: 0; } 25% { transform: scale(1); opacity: 1; } to { transform: scale(0.92); opacity: 0.85; } }
+@media (prefers-reduced-motion: reduce) { .countdown { animation: none; } }
 .hud-top { position: absolute; top: 12px; left: 14px; right: 14px; display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; pointer-events: none; }
 .tag { background: rgba(10, 10, 12, .78); border-radius: 4px; padding: 4px 9px; font: 12px var(--font-data); color: var(--muted); }
 .tag.ghost { color: var(--ghost-kart); }
