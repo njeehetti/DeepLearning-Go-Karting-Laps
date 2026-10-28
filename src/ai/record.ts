@@ -35,7 +35,6 @@ export function recordRun(world: World, params: ArrayLike<number>, spec: Episode
   const f = () => new Float32Array(cap);
   const run = { hz: 30, n: 0, t: f(), x: f(), y: f(), z: f(), psi: f(), v: f(), ax: f(), ay: f(), thr: f(), brk: f(), steer: f(), beta: f(), s: f(), dist: f(), d: f(), obs: new Float32Array(cap * N_OBS) };
   const pilot = new Pilot();
-  pilot.profile = world.profile;
   const result = runEpisode(world.sim, pilot, params, spec, new KartState(), (st, inp, decided) => {
     if (!decided || run.n >= cap) return;
     const k = run.n++;

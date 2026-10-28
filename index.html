@@ -33,7 +33,7 @@
         <header class="title-row">
           <div class="title-text">
             <h1><span id="t-track">LYL International</span> · <span id="t-kart">270cc</span></h1>
-            <p class="finding" id="finding">Lance l'entraînement : 256 pilotes vont apprendre la piste en parallèle.</p>
+            <p class="finding" id="finding">256 pilotes débutants vont découvrir ce circuit.</p>
           </div>
           <div class="title-actions">
             <select id="track-sel" class="track-sel" aria-label="Circuit"></select>
@@ -50,12 +50,21 @@
         <!-- Piste: 3D (2/3) + timing tower (1/3); then the corner strip; then learning (2/3) + population (1/3).
              Grid: 3 columns, 24px gap; 2 x col + gap = 2/3 span. -->
         <section class="view" data-view="piste">
+          <ol class="steps" id="steps" aria-label="Comment ça marche">
+            <li data-step="1"><b>1 · Choisis</b><span>un circuit, un kart et la météo, en haut à droite.</span></li>
+            <li data-step="2"><b>2 · Entraîne</b><span>des pilotes débutants découvrent la piste. À chaque génération, les meilleurs servent de modèle aux suivants.</span></li>
+            <li data-step="3"><b>3 · Compare</b><span>fais rouler ici un pilote formé sur un autre circuit. <button class="linkish" id="go-invites">Voir les pilotes invités</button></span></li>
+          </ol>
           <div class="grid3">
             <section class="panel span2 stage" aria-label="Vue 3D">
               <div class="panel-h">
                 <div class="tabs" role="group" aria-label="Ce que montre la vue">
-                  <button data-mode="live" aria-pressed="true">Génération en cours</button>
-                  <button data-mode="replay" aria-pressed="false">Meilleur tour</button>
+                  <button data-mode="live" aria-pressed="true">Entraînement en direct</button>
+                  <button data-mode="replay" aria-pressed="false">Revoir le meilleur tour</button>
+                </div>
+                <div class="tabs" role="group" aria-label="Rythme de l'entraînement" id="pace">
+                  <button data-pace="follow" aria-pressed="true" title="L'entraînement attend que tu aies vu chaque génération rouler">Chaque génération</button>
+                  <button data-pace="fast" aria-pressed="false" title="L'entraînement va à pleine vitesse ; la vue montre une génération de temps en temps">Accéléré</button>
                 </div>
                 <div class="tabs" role="group" aria-label="Couleur de la trajectoire">
                   <button data-line="speed" aria-pressed="true">Vitesse</button>
@@ -70,7 +79,7 @@
               </div>
               <div class="view3d" id="view3d">
                 <canvas id="c3d" aria-label="Circuit en 3D"></canvas>
-                <div class="hud-top"><span class="tag" id="h-lap">–</span><span class="tag ghost" id="h-ghost" hidden></span></div>
+                <div class="hud-top"><span class="tag" id="h-lap">–</span><button class="tag catch" id="h-catch" hidden>Voir la dernière génération</button><span class="tag ghost" id="h-ghost" hidden></span></div>
                 <div class="hud" id="hud">
                   <div class="hud-speed"><b id="h-spd">0</b><small>km/h</small></div>
                   <div class="pedals" aria-hidden="true"><div class="pedal t"><div class="bar"><i id="h-thr"></i></div><b id="h-thr-v">0</b><small>Gaz</small></div><div class="pedal b"><div class="bar"><i id="h-brk"></i></div><b id="h-brk-v">0</b><small>Frein</small></div></div>
@@ -82,13 +91,13 @@
               </div>
               <div class="playbar">
                 <button class="btn small" id="play">Pause</button>
-                <select id="rate" aria-label="Vitesse de lecture"><option value="0.5">×0,5</option><option value="1" selected>×1</option><option value="2">×2</option><option value="4">×4</option></select>
+                <select id="rate" aria-label="Vitesse de lecture"><option value="0.5">×0,5</option><option value="1" selected>×1</option><option value="2">×2</option><option value="4">×4</option><option value="8">×8</option></select>
                 <select id="ghost" aria-label="Fantôme">
                   <option value="none">Sans fantôme</option>
                   <option value="theory">Fantôme : tour parfait</option>
                   <option value="older">Fantôme : génération N−50</option>
                   <option value="other">Fantôme : autre kart</option>
-                  <option value="guest">Fantôme : témoin d’un autre circuit</option>
+                  <option value="guest">Fantôme : pilote invité (autre circuit)</option>
                 </select>
                 <input type="range" id="scrub" min="0" max="1000" value="0" aria-label="Position dans le tour" />
               </div>
@@ -104,15 +113,15 @@
               <div class="lead">
                 <span class="label">Meilleur tour IA</span>
                 <b class="lead-time num" id="t-best">–:––.–––</b>
-                <span class="sub" id="t-gap">Pas encore de tour propre</span>
+                <span class="sub" id="t-gap">Pas encore de tour sans sortie de piste</span>
               </div>
               <dl class="times">
-                <div><dt>Tour parfait</dt><dd class="num" id="t-theory">…</dd></div>
+                <div title="La limite physique du kart sur ce circuit, calculée par le simulateur"><dt>Tour parfait</dt><dd class="num" id="t-theory">…</dd></div>
                 <div id="t-you-row"><dt>Ton record</dt><dd class="num" id="t-you">1:36.270</dd></div>
-                <div><dt>Génération</dt><dd class="num" id="s-gen">0</dd></div>
-                <div><dt>Tours bouclés</dt><dd class="num" id="s-comp">–</dd></div>
-                <div><dt>Tours propres</dt><dd class="num" id="s-clean">–</dd></div>
-                <div><dt>Calcul</dt><dd class="num" id="s-time">0 s</dd></div>
+                <div title="Nombre de générations de pilotes déjà entraînées"><dt>Génération</dt><dd class="num" id="s-gen">0</dd></div>
+                <div title="Part des essais de la dernière génération qui ont fait le tour complet"><dt>Tours bouclés</dt><dd class="num" id="s-comp">–</dd></div>
+                <div title="Tours bouclés sans roue dans l'herbe. Les autres n'ont pas de chrono : c'est la règle des limites de piste"><dt>Sans sortie</dt><dd class="num" id="s-clean">–</dd></div>
+                <div title="Temps passé à calculer l'entraînement"><dt>Temps de calcul</dt><dd class="num" id="s-time">0 s</dd></div>
               </dl>
               <canvas class="minimap" id="minimap" aria-label="Plan du circuit et position du kart"></canvas>
               <div class="gens">
@@ -140,8 +149,22 @@
                 <label class="field" for="pop">Pilotes par génération <b class="num" id="pop-v"></b></label>
                 <input type="range" id="pop" min="64" max="512" step="32" />
                 <p class="note" id="workers-note"></p>
-                <p class="note">Chaque génération essaie des variantes du meilleur cerveau ; le meilleur roule à nouveau à la suivante, donc le record ne recule jamais.</p>
-                <button class="btn" id="reset">Repartir de zéro</button>
+                <p class="note">Chaque génération essaie des variantes des meilleurs pilotes de la précédente ; le meilleur roule à nouveau à la suivante, donc le record ne recule jamais.</p>
+                <p class="note">Un tour avec une roue dans l'herbe est bouclé mais son chrono est annulé (limites de piste).</p>
+                <button class="btn" id="reset" title="Remet des pilotes débutants en piste ; ton record est gardé">Repartir de zéro</button>
+              </div>
+            </section>
+            <section class="panel span3" aria-labelledby="h-guests" id="invites">
+              <div class="panel-h"><h2 id="h-guests">Pilotes invités</h2><span class="meta">formés sur un autre circuit, testés ici tels quels, sans réentraînement</span></div>
+              <div class="tablewrap">
+                <table class="weather-table guest-table">
+                  <thead><tr><th>Pilote</th><th>Entraîné sur</th><th class="num">Tour lancé ici</th><th></th></tr></thead>
+                  <tbody id="guest-rows"></tbody>
+                </table>
+              </div>
+              <div class="body">
+                <p class="note" id="guest-empty" hidden>Entraîne un pilote sur un autre circuit avec le même kart : il apparaîtra ici.</p>
+                <p class="note" id="guest-msg"><b>Faire rouler ici</b> : il roule en fantôme bleu à côté de tes pilotes (en direct et en replay), et son tour s'affiche dans l'analyse. <b>Partir de lui</b> : le prochain entraînement démarre de ce pilote au lieu de débutants.</p>
               </div>
             </section>
           </div>
@@ -183,7 +206,8 @@
             <section class="panel" aria-labelledby="h-how">
               <div class="panel-h"><h2 id="h-how">Ce que voit et fait le pilote</h2></div>
               <div class="body prose">
-                <p><b>22 entrées :</b> 9 rayons vers les bords, vitesse, dérive, lacet, écart latéral, erreur de cap, braquage actuel, courbure de la piste à 10, 25 et 50 m, freinage requis, marge de vitesse, accélération et frein.</p>
+                <p><b>20 entrées :</b> 9 rayons vers les bords, vitesse, dérive, lacet, écart latéral, erreur de cap, braquage actuel, courbure de la piste à 10, 25 et 50 m, accélération et frein.</p>
+                <p>Rien ne lui dit à quelle vitesse passer un virage : comme un amateur sur un circuit inconnu, il le découvre en essayant.</p>
                 <p><b>32 neurones cachés</b> qui combinent ces signaux.</p>
                 <p><b>3 sorties</b>, 30 fois par seconde : direction, gaz, frein.</p>
                 <p><b>Ambre</b> : signal positif, <b class="ghost-ink">bleu</b> : signal négatif. L'épaisseur d'un lien est son poids.</p>
@@ -196,19 +220,6 @@
                 <button class="btn" id="export">Exporter (.json)</button>
                 <label class="btn" for="import">Importer</label>
                 <input type="file" id="import" accept=".json,application/json" hidden />
-              </div>
-            </section>
-            <section class="panel span3" aria-labelledby="h-guests">
-              <div class="panel-h"><h2 id="h-guests">Pilotes des autres circuits</h2><span class="meta">testés ici tels quels, sans réentraînement</span></div>
-              <div class="tablewrap">
-                <table class="weather-table guest-table">
-                  <thead><tr><th>Pilote</th><th>Entraîné sur</th><th class="num">Tour lancé ici</th><th></th></tr></thead>
-                  <tbody id="guest-rows"></tbody>
-                </table>
-              </div>
-              <div class="body">
-                <p class="note" id="guest-empty" hidden>Entraîne un pilote sur un autre circuit avec le même kart : il apparaîtra ici.</p>
-                <p class="note" id="guest-msg"><b>Témoin</b> : il roule en fantôme, à côté des pilotes en entraînement. <b>Partir de lui</b> : le prochain entraînement démarre de ce pilote au lieu de zéro.</p>
               </div>
             </section>
           </div>
@@ -233,6 +244,9 @@
                 </select>
                 <button class="btn" id="calib">Recaler le kart</button>
                 <p class="note" id="calib-msg"></p>
+                <label class="field" for="weight">Ton poids en tenue (kg)</label>
+                <input type="text" id="weight" inputmode="numeric" autocomplete="off" />
+                <p class="note" id="weight-msg">Les pilotes IA roulent avec ce poids. Il pèse surtout dans les relances : au LYL, 5 kg de plus coûtent ≈ 0,08 s au tour parfait.</p>
                 <label class="field" for="myrec" id="myrec-l">Ton record sur ce circuit</label>
                 <input type="text" id="myrec" inputmode="decimal" autocomplete="off" placeholder="1:36.270" />
               </div>

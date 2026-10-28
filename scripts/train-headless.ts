@@ -3,6 +3,7 @@
 // Generalist: --others all (or genk,pfi,…) also drives the other circuits. --x0 <brain.json> resumes a brain.
 // --eval <brain.json> only measures a brain on every circuit. --weather sec|gras|humide|pluie sets the conditions.
 // --hidden 32 (or 32,16) sizes the network; an --x0 brain with a smaller single hidden layer is widened.
+// --driver 80 sets the driver's mass in kit (kg, default from the calibration).
 import { availableParallelism } from 'node:os';
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { Worker } from 'node:worker_threads';
@@ -44,7 +45,7 @@ const fmt = (T: number) => (Number.isFinite(T) ? `${Math.floor(T / 60)}:${(T % 6
 const c = DEFAULT_CALIBRATION[kartId];
 const world: WorldSpec = {
   track: def, scale: 'official',
-  kart: { kartId, mu: c.mu, powerScale: c.powerScale, vTopKmh: c.vTopKmh, transmission: c.transmission, driver: c.driver, weather: arg('weather', 'sec') as Weather },
+  kart: { kartId, mu: c.mu, powerScale: c.powerScale, vTopKmh: c.vTopKmh, transmission: c.transmission, driver: parseFloat(arg('driver', String(c.driver))), weather: arg('weather', 'sec') as Weather },
   ...(otherIds.length ? { others: otherIds.map(loadTrack) } : {}),
   ...(hidden ? { hidden } : {}),
 };
@@ -55,7 +56,6 @@ function evalAll(params: ArrayLike<number>, shape: MlpShape): void {
   for (const id of allIds) {
     const w = new World({ ...world, track: loadTrack(id), others: undefined });
     const pilot = new Pilot(shape);
-    pilot.profile = w.profile;
     const r = runEpisode(w.sim, pilot, params, { s0: 0, d0: 0, v0: w.startSpeed(0), maxTime: 200, timeWeight: 1 });
     console.log(`  ${id.padEnd(13)} ${r.completed ? fmt(r.lapTime) : 'non bouclé (' + r.end + ', ' + r.progress.toFixed(0) + ' m)'}${r.completed && !r.clean ? ' (herbe)' : ''}`);
   }

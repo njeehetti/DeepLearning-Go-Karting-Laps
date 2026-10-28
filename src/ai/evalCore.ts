@@ -92,15 +92,12 @@ export class Evaluator {
     this.world = world;
     this.worlds = [world, ...others];
     this.pilot = new Pilot(world.shape);
-    this.pilot.profile = world.profile;
     this.x = new Float64Array(world.dim);
     this.z = new Float64Array(world.dim);
   }
 
   private worldOf(spec: EpisodeSpec): World {
-    const w = this.worlds[spec.track ?? 0] ?? this.world;
-    this.pilot.profile = w.profile;
-    return w;
+    return this.worlds[spec.track ?? 0] ?? this.world;
   }
 
   episode(params: ArrayLike<number>, spec: EpisodeSpec): EpisodeResult {
