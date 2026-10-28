@@ -66,7 +66,11 @@ applyTheme(THEME);
   host.appendChild(sky);
 }
 // v4: 20-input network that does not know the corner speeds; older brains are ignored
-const brainKeyOf = (id: string, k: KartId, w: Weather) => `brain4:${id}:${k}:${SCALE}${w === 'sec' ? '' : ':' + w}`;
+// a lap time belongs to the driver's mass: brains trained at another mass than the default 75 kg are kept apart
+const brainKeyOf = (id: string, k: KartId, w: Weather) => {
+  const kg = calibOf(k).driver;
+  return `brain4:${id}:${k}:${SCALE}${w === 'sec' ? '' : ':' + w}${kg === 75 ? '' : `:${kg}kg`}`;
+};
 const brainKey = (k: KartId, w: Weather = S.weather) => brainKeyOf(DEF.id, k, w);
 /** Theoretical laps are cached per kart and track conditions. */
 const thKey = (k: KartId, w: Weather = S.weather) => `${k}:${w}`;
@@ -266,6 +270,7 @@ function updateMeta(): void {
   $('kart-meta').innerHTML = rows.map(([a, b, w]) => `<div><dt>${a}</dt><dd${w ? ' class="warn"' : ''}>${b}</dd></div>`).join('');
   ($('mylap') as HTMLInputElement).value = Number.isFinite(c.targetLap) ? fmtLap(c.targetLap) : '';
   ($('calmode') as HTMLSelectElement).value = c.mode;
+  ($('weight') as HTMLInputElement).value = String(c.driver);
   const you = myRecord(S.kartId);
   ($('myrec') as HTMLInputElement).value = Number.isFinite(you) ? fmtLap(you) : '';
   $('myrec-l').textContent = `Ton record en ${KARTS[S.kartId].label} sur ${DEF.short ?? DEF.name}`;
@@ -560,6 +565,28 @@ $('myrec').addEventListener('change', () => {
   updateMeta();
 });
 
+// the driver's mass in kit: it belongs to the driver, so it applies to both karts
+$('weight').addEventListener('change', () => {
+  const el = $<HTMLInputElement>('weight');
+  const kg = Math.round(parseFloat(el.value.replace(',', '.')));
+  const msg = $('weight-msg');
+  if (!Number.isFinite(kg) || kg < 40 || kg > 150) {
+    msg.textContent = 'Écris un poids entre 40 et 150 kg.';
+    return;
+  }
+  for (const k of ['k270', 'k390'] as KartId[]) {
+    LS.set(calibKey(k), { ...calibOf(k), driver: kg });
+    for (const w of WEATHER_IDS) S.theory.delete(thKey(k, w));
+  }
+  S.running = false;
+  S.trainer = null;
+  guestRuns.clear();
+  msg.textContent = `Les pilotes roulent maintenant à ${kg} kg. Le tour parfait est recalculé ; les cerveaux entraînés à un autre poids sont gardés à part.`;
+  updateMeta();
+  void setBest(brainOf(brainKey(S.kartId)));
+  void loadTheory(S.kartId);
+  void renderGuests();
+});
 $('calib').addEventListener('click', async () => {
   const target = parseLap(($('mylap') as HTMLInputElement).value);
   const msg = $('calib-msg');
