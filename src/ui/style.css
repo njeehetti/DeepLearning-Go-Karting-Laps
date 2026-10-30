@@ -15,6 +15,7 @@
   --positive: #44a282;
   --negative: #e5566f;
   --ghost: #4a8ad6;
+  --ghost-kart: #ffd83a;
   --throttle: #44a282;
   --brake: #e5566f;
   --radius-card: 6px;
@@ -119,9 +120,28 @@ input[type=range] { accent-color: var(--accent); }
 .view3d { position: relative; height: clamp(360px, 58vh, 640px); background: #05080a; }
 .view3d #c3d { display: block; width: 100%; height: 100%; touch-action: none; }
 .no3d { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; padding: 20px; color: var(--muted); text-align: center; }
+.countdown { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; font: 800 clamp(56px, 12vw, 132px)/1 var(--font-display); color: #fff; text-shadow: 0 4px 24px rgb(0 0 0 / 0.6); animation: count-pop 0.9s ease-out both; }
+.countdown[hidden] { display: none; }
+.countdown.go { color: var(--positive); }
+@keyframes count-pop { from { transform: scale(1.6); opacity: 0; } 25% { transform: scale(1); opacity: 1; } to { transform: scale(0.92); opacity: 0.85; } }
+@media (prefers-reduced-motion: reduce) { .countdown { animation: none; } }
 .hud-top { position: absolute; top: 12px; left: 14px; right: 14px; display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; pointer-events: none; }
 .tag { background: rgba(10, 10, 12, .78); border-radius: 4px; padding: 4px 9px; font: 12px var(--font-data); color: var(--muted); }
-.tag.ghost { color: var(--ghost); }
+.tag.ghost { color: var(--ghost-kart); }
+/* how the driver learns: steps, live weight map, side charts */
+.how { list-style: none; margin: 0 0 12px; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.how li { display: flex; flex-direction: column; gap: 2px; color: var(--muted); }
+.how li b { color: var(--text); font-weight: 600; }
+.learn-status { margin: 0 0 12px; color: var(--muted); min-height: 1.5em; }
+.learn-status b { color: var(--text); font-weight: 600; font-family: var(--font-data); }
+.learn-actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 12px; }
+.learn-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: var(--gap); }
+.learn-map, .learn-side { min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.tabs.small button { font-size: 12px; }
+.wmap { width: 100%; height: 360px; cursor: crosshair; }
+.mini-chart { width: 100%; height: 110px; }
+.mini-track { width: 100%; height: 190px; }
+.acc-ink { color: var(--accent); }
 .tag.catch { pointer-events: auto; border: 1px solid var(--accent); color: var(--text); cursor: pointer; }
 .hud { position: absolute; inset: auto 0 0 0; display: flex; align-items: flex-end; gap: 14px; padding: 12px 16px; pointer-events: none; background: linear-gradient(to top, rgba(4, 6, 8, .85), rgba(4, 6, 8, 0)); }
 .hud-speed b { font: 600 40px/1 var(--font-data); font-variant-numeric: tabular-nums; }
@@ -207,6 +227,8 @@ tbody tr.sel { outline: 1px solid var(--accent); outline-offset: -1px; }
 @media (max-width: 1100px) {
   .grid3 { grid-template-columns: minmax(0, 1fr); }
   .steps { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .how, .learn-grid { grid-template-columns: minmax(0, 1fr); }
+  .wmap { height: 300px; }
   .span2, .span3 { grid-column: auto; }
   .tower { display: grid; grid-template-columns: 1fr 1fr; }
   .tower .lead, .tower .times { grid-column: 1; }

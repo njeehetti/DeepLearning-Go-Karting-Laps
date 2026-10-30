@@ -2,10 +2,10 @@
 import type { GenStats } from '../ai/trainer';
 import type { Run } from '../ai/record';
 
-const css = (n: string) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+export const css = (n: string) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 export const fmtLap = (T: number) => (Number.isFinite(T) ? `${Math.floor(T / 60)}:${(T % 60).toFixed(3).padStart(6, '0')}` : '–:––.–––');
 
-function prep(cv: HTMLCanvasElement) {
+export function prep(cv: HTMLCanvasElement) {
   const r = cv.getBoundingClientRect();
   const d = Math.min(window.devicePixelRatio || 1, 2);
   if (cv.width !== Math.round(r.width * d) || cv.height !== Math.round(r.height * d)) {

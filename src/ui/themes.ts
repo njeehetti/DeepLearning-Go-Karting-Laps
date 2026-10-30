@@ -20,6 +20,9 @@ export interface PlaceTheme {
   trees: [number, number, number];
   /** Share of the usual tree count (dry places have fewer). */
   treeDensity: number;
+  /** Start countdown in the local language: 3, 2, 1, go, and its language tag. */
+  countdown: [string, string, string, string];
+  lang: string;
   skyline: Draw;
 }
 
@@ -346,15 +349,15 @@ const skylines: Record<string, Draw> = {
 
 type Colours = Omit<PlaceTheme, 'skyline'>;
 const COLOURS: Record<string, Colours> = {
-  lyl: { caption: 'Kajang la nuit, les tours Petronas à l’horizon', accent: '#f1a33b', ghost: '#4a8ad6', flag: ['#cc0001', '#ffffff', '#010066', '#ffcc00'], sky: ['#05080d', '#14202a'], grass: [0.12, 0.2, 0.13], trees: [0.05, 0.11, 0.07], treeDensity: 1 },
-  lemans: { caption: 'Le pont Dunlop et les tribunes du circuit des 24 Heures', accent: '#6c9bff', ghost: '#efe3c8', flag: ['#0055a4', '#ffffff', '#ef4135'], sky: ['#05070f', '#151d33'], grass: [0.11, 0.19, 0.12], trees: [0.05, 0.1, 0.07], treeDensity: 1 },
-  genk: { caption: 'Les chevalements et les terrils de la mine de Genk', accent: '#e9c46a', ghost: '#7fb0ff', flag: ['#000000', '#fdda24', '#ef3340'], sky: ['#070708', '#1d1b18'], grass: [0.11, 0.17, 0.11], trees: [0.05, 0.09, 0.06], treeDensity: 0.9 },
-  kristianstad: { caption: 'Les pins de Scanie et l’église de la Trinité', accent: '#8fd3ff', ghost: '#ffd36b', flag: ['#006aa7', '#fecc02', '#006aa7'], sky: ['#030810', '#0d2230'], grass: [0.09, 0.17, 0.12], trees: [0.03, 0.09, 0.06], treeDensity: 1.6 },
-  lonato: { caption: 'Le Monte Baldo au-dessus du lac de Garde et la Rocca di Lonato', accent: '#dfe05a', ghost: '#7fb0ff', flag: ['#009246', '#ffffff', '#ce2b37'], sky: ['#05080e', '#17222e'], grass: [0.12, 0.2, 0.12], trees: [0.04, 0.1, 0.06], treeDensity: 1 },
-  adria: { caption: 'La lagune du delta du Pô et ses bricole', accent: '#2ec4d6', ghost: '#ffb37a', flag: ['#009246', '#ffffff', '#ce2b37'], sky: ['#040a0e', '#11252b'], grass: [0.12, 0.2, 0.14], trees: [0.05, 0.11, 0.08], treeDensity: 0.6 },
-  sarno: { caption: 'Le Vésuve et le Somma au-dessus de la plaine de Sarno', accent: '#ff7a3d', ghost: '#7fb0ff', flag: ['#009246', '#ffffff', '#ce2b37'], sky: ['#0a0607', '#2a1712'], grass: [0.13, 0.19, 0.11], trees: [0.06, 0.1, 0.05], treeDensity: 0.9 },
-  zuera: { caption: 'Les plateaux de l’Èbre et les éoliennes d’Aragon', accent: '#e8a46a', ghost: '#7fb0ff', flag: ['#aa151b', '#f1bf00', '#aa151b'], sky: ['#08070b', '#241c1a'], grass: [0.22, 0.18, 0.11], trees: [0.09, 0.1, 0.06], treeDensity: 0.25 },
-  pfi: { caption: 'Les haies du Lincolnshire et le moulin à huit ailes de Heckington', accent: '#b9a7ff', ghost: '#ffd36b', flag: ['#012169', '#ffffff', '#c8102e'], sky: ['#05060c', '#161a2a'], grass: [0.11, 0.2, 0.12], trees: [0.05, 0.11, 0.07], treeDensity: 0.8 },
+  lyl: { caption: 'Kajang la nuit, les tours Petronas à l’horizon', accent: '#f1a33b', ghost: '#4a8ad6', flag: ['#cc0001', '#ffffff', '#010066', '#ffcc00'], sky: ['#05080d', '#14202a'], grass: [0.12, 0.2, 0.13], trees: [0.05, 0.11, 0.07], treeDensity: 1, countdown: ['Tiga', 'Dua', 'Satu', 'Mula!'], lang: 'ms' },
+  lemans: { caption: 'Le pont Dunlop et les tribunes du circuit des 24 Heures', accent: '#6c9bff', ghost: '#efe3c8', flag: ['#0055a4', '#ffffff', '#ef4135'], sky: ['#05070f', '#151d33'], grass: [0.11, 0.19, 0.12], trees: [0.05, 0.1, 0.07], treeDensity: 1, countdown: ['Trois', 'Deux', 'Un', 'Partez !'], lang: 'fr' },
+  genk: { caption: 'Les chevalements et les terrils de la mine de Genk', accent: '#e9c46a', ghost: '#7fb0ff', flag: ['#000000', '#fdda24', '#ef3340'], sky: ['#070708', '#1d1b18'], grass: [0.11, 0.17, 0.11], trees: [0.05, 0.09, 0.06], treeDensity: 0.9, countdown: ['Drie', 'Twee', 'Eén', 'Start!'], lang: 'nl' },
+  kristianstad: { caption: 'Les pins de Scanie et l’église de la Trinité', accent: '#8fd3ff', ghost: '#ffd36b', flag: ['#006aa7', '#fecc02', '#006aa7'], sky: ['#030810', '#0d2230'], grass: [0.09, 0.17, 0.12], trees: [0.03, 0.09, 0.06], treeDensity: 1.6, countdown: ['Tre', 'Två', 'Ett', 'Kör!'], lang: 'sv' },
+  lonato: { caption: 'Le Monte Baldo au-dessus du lac de Garde et la Rocca di Lonato', accent: '#dfe05a', ghost: '#7fb0ff', flag: ['#009246', '#ffffff', '#ce2b37'], sky: ['#05080e', '#17222e'], grass: [0.12, 0.2, 0.12], trees: [0.04, 0.1, 0.06], treeDensity: 1, countdown: ['Tre', 'Due', 'Uno', 'Via!'], lang: 'it' },
+  adria: { caption: 'La lagune du delta du Pô et ses bricole', accent: '#2ec4d6', ghost: '#ffb37a', flag: ['#009246', '#ffffff', '#ce2b37'], sky: ['#040a0e', '#11252b'], grass: [0.12, 0.2, 0.14], trees: [0.05, 0.11, 0.08], treeDensity: 0.6, countdown: ['Tre', 'Due', 'Uno', 'Via!'], lang: 'it' },
+  sarno: { caption: 'Le Vésuve et le Somma au-dessus de la plaine de Sarno', accent: '#ff7a3d', ghost: '#7fb0ff', flag: ['#009246', '#ffffff', '#ce2b37'], sky: ['#0a0607', '#2a1712'], grass: [0.13, 0.19, 0.11], trees: [0.06, 0.1, 0.05], treeDensity: 0.9, countdown: ['Tre', 'Due', 'Uno', 'Via!'], lang: 'it' },
+  zuera: { caption: 'Les plateaux de l’Èbre et les éoliennes d’Aragon', accent: '#e8a46a', ghost: '#7fb0ff', flag: ['#aa151b', '#f1bf00', '#aa151b'], sky: ['#08070b', '#241c1a'], grass: [0.22, 0.18, 0.11], trees: [0.09, 0.1, 0.06], treeDensity: 0.25, countdown: ['Tres', 'Dos', 'Uno', '¡Ya!'], lang: 'es' },
+  pfi: { caption: 'Les haies du Lincolnshire et le moulin à huit ailes de Heckington', accent: '#b9a7ff', ghost: '#ffd36b', flag: ['#012169', '#ffffff', '#c8102e'], sky: ['#05060c', '#161a2a'], grass: [0.11, 0.2, 0.12], trees: [0.05, 0.11, 0.07], treeDensity: 0.8, countdown: ['Three', 'Two', 'One', 'Go!'], lang: 'en' },
 };
 
 export function themeOf(id: string): PlaceTheme {

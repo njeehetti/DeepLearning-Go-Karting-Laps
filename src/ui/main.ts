@@ -10,6 +10,7 @@ import { KARTS, type KartId } from '../sim/karts';
 import { LIVE_STRIDE, World, type WorldSpec } from '../ai/evalCore';
 import { DRIVER_SHAPE, toDriverShape } from '../ai/mlp';
 import generalist from '../../data/brains/generaliste-k270.json';
+import sansLyl from '../../data/brains/sans-lyl-k270.json';
 import { N_OBS } from '../ai/obs';
 import { WorkerPool, type WorkerLike } from '../ai/pool';
 import { cornerSheet, indexAtDist, poseAt, type CornerSheetRow, type Pose, type Run } from '../ai/record';
@@ -17,6 +18,7 @@ import { Trainer, type Brain, type GenStats } from '../ai/trainer';
 import type { ToolRequest, ToolResponse } from '../workers/tool.worker';
 import { drawEvo, drawTel, fmtLap, type TelGeom } from './charts';
 import { NnView } from './nnview';
+import { initLearn } from './learn';
 import { Scene3D, type CamMode } from './scene';
 import { applyTheme, skylineCanvas, themeOf } from './themes';
 import { WEATHERS, WEATHER_IDS, type Weather } from '../sim/weather';
@@ -124,6 +126,8 @@ const S = {
     prevLap: NaN,
     /** Playback time of the generation being shown (s). */
     el: 0,
+    /** Start countdown of the first generation (s left before the green light; then negative while "go" shows). */
+    countdown: 0,
     hints: new Int32Array(128),
     dist: new Float64Array(128),
     lastS: new Float64Array(128),
@@ -143,6 +147,8 @@ function asDriver(b: Brain | null): Brain | null {
 const brainOf = (k: string) => asDriver(LS.get<Brain>(k));
 /** Driver trained on every circuit at once, offered as a guest (null if its network is out of date). */
 const GENERALIST = asDriver(generalist as Brain);
+/** Same training on the 8 other circuits, never on the LYL: shows what a driver brings to an unknown track. */
+const NEVER_LYL = asDriver(sansLyl as Brain);
 
 function calibOf(k: KartId): Calibration {
   return LS.get<Calibration>(calibKey(k)) ?? LS.get<Calibration>(`calib:lyl:${k}`) ?? DEFAULT_CALIBRATION[k];
@@ -203,6 +209,15 @@ new ResizeObserver(() => {
   scene.resize(r.width, r.height);
 }).observe($('view3d'));
 const nn = new NnView($('nn'));
+// how the driver learns: the evolving weights, and a student copying the best driver by backpropagation
+const learn = initLearn({
+  track,
+  world: () => worldOf(S.kartId),
+  teachers: () => [
+    ...(S.best ? [{ label: 'meilleur pilote de ce circuit', params: S.best.params }] : []),
+    ...(GENERALIST ? [{ label: 'pilote généraliste', params: GENERALIST.params }] : []),
+  ],
+});
 
 // ---------- header / meta ----------
 function updateHeader(): void {
@@ -228,6 +243,7 @@ function updateHeader(): void {
   const pill = $('status');
   pill.className = 'status' + (S.running ? ' on' : '');
   pill.querySelector('span')!.textContent = S.running ? 'Entraînement en cours' : 'En pause';
+  $('save-pilot').hidden = !S.trainer?.history.length;
   $('run').textContent = S.running ? 'Mettre en pause' : S.trainer && S.trainer.history.length ? 'Reprendre l’entraînement' : 'Lancer l’entraînement';
   $('k270').setAttribute('aria-pressed', String(S.kartId === 'k270'));
   $('k390').setAttribute('aria-pressed', String(S.kartId === 'k390'));
@@ -397,6 +413,7 @@ async function ensureTrainer(fresh = false): Promise<Trainer> {
     const tr = new Trainer(S.pool, { world, lambda: S.pop, seed: (Math.random() * 1e9) | 0, L: track.L, startSpeed, x0: x0?.params, sigma0: stored && !seed ? 0.15 : x0 ? 0.25 : 0.5 });
     (tr as Trainer & { key?: string }).key = key;
     S.trainer = tr;
+    learn.resetEvo();
     S.computeMs = 0;
   }
   return S.trainer;
@@ -429,10 +446,27 @@ interface LiveGen {
   prevLap: number;
 }
 function startLive(g: LiveGen): void {
-  Object.assign(S.live, { traj: g.traj, best: g.best, gen: g.gen, lap: g.lap, prevLap: g.prevLap, el: 0, pending: null });
+  // the first generation lines up on the grid and waits for 3, 2, 1, go
+  Object.assign(S.live, { traj: g.traj, best: g.best, gen: g.gen, lap: g.lap, prevLap: g.prevLap, el: 0, pending: null, countdown: g.gen === 0 ? 3 : 0 });
   S.live.hints.fill(0);
   S.live.dist.fill(0);
   S.live.init.fill(0);
+}
+const countdownEl = $('countdown');
+countdownEl.lang = THEME.lang;
+let countdownShown = '';
+/** 3, 2, 1, then "go" for a second, in the language of the circuit's country. */
+function showCountdown(left: number): void {
+  const word = left > 0 ? THEME.countdown[3 - Math.ceil(left)] : left > -1 && S.live.gen === 0 ? THEME.countdown[3] : '';
+  if (word === countdownShown) return;
+  countdownShown = word;
+  countdownEl.hidden = !word;
+  countdownEl.textContent = word;
+  countdownEl.classList.toggle('go', left <= 0);
+  // restart the pop animation on each new word
+  countdownEl.style.animation = 'none';
+  void countdownEl.offsetWidth;
+  countdownEl.style.animation = '';
 }
 /** "Chaque génération": the next generation is only computed once the viewer has seen this one race.
  *  Fast mode, another view, the replay or a hidden tab let the training run at full speed. */
@@ -461,6 +495,7 @@ function onGen(tr: Trainer, s: GenStats): void {
   drawEvoNow();
   renderGens(tr);
   updateHeader();
+  learn.onGen(tr.es);
 }
 function drawEvoNow(): void {
   if (!S.trainer) return;
@@ -498,6 +533,7 @@ async function setKart(k: KartId): Promise<void> {
   LS.set('kart', k);
   S.trainer = null;
   S.guest = null;
+  learn.resetStudent();
   updateHeader();
   updateMeta();
   await setBest(brainOf(brainKey(k)));
@@ -513,6 +549,7 @@ async function setWeather(w: Weather): Promise<void> {
   LS.set('weather', w);
   S.trainer = null;
   S.guest = null;
+  learn.resetStudent();
   scene.setWeather(w);
   $('weather-note').textContent = w === 'sec' ? '' : WEATHERS[w].note;
   updateHeader();
@@ -581,6 +618,7 @@ $('weight').addEventListener('change', () => {
   S.running = false;
   S.trainer = null;
   guestRuns.clear();
+  learn.resetStudent();
   msg.textContent = `Les pilotes roulent maintenant à ${kg} kg. Le tour parfait est recalculé ; les cerveaux entraînés à un autre poids sont gardés à part.`;
   updateMeta();
   void setBest(brainOf(brainKey(S.kartId)));
@@ -628,14 +666,51 @@ interface Guest {
   name: string;
   home: string;
   brain: Brain;
+  /** Saved by the user from a training run (can be removed). */
+  saved?: boolean;
 }
+/** "de Genk", "du Mans". */
+const of = (n: string) => (n.startsWith('Le ') ? 'du ' + n.slice(3) : 'de ' + n);
+
+// ---------- pilots saved from a training run, to race them on other circuits ----------
+interface SavedPilot {
+  id: string;
+  trackName: string;
+  brain: Brain;
+}
+const savedPilots = () => LS.get<SavedPilot[]>('saved-pilots') ?? [];
+$('save-pilot').addEventListener('click', () => {
+  const b = S.trainer?.snapshot();
+  const btn = $('save-pilot');
+  if (!b) return;
+  const list = savedPilots();
+  const n = DEF.short ?? DEF.name;
+  if (!list.some((p) => p.brain.track === b.track && p.brain.gen === b.gen && p.brain.kart.kartId === b.kart.kartId)) {
+    LS.set('saved-pilots', [...list, { id: `s${Date.now()}`, trackName: n, brain: b }]);
+    if (LS.get<SavedPilot[]>('saved-pilots')?.length !== list.length + 1) {
+      btn.textContent = 'Stockage plein : exporte-le depuis la vue Cerveau';
+      return;
+    }
+  }
+  btn.textContent = `Sauvé : ${n} · gén. ${fr(b.gen + 1)}`;
+  setTimeout(() => (btn.textContent = 'Sauver ce pilote'), 2500);
+  void renderGuests();
+});
 function guests(): Guest[] {
   const out: Guest[] = GENERALIST ? [{ id: 'generaliste', label: 'pilote généraliste', name: 'Généraliste', home: 'les 9 circuits à la fois', brain: GENERALIST }] : [];
+  if (NEVER_LYL) out.push({ id: 'sans-lyl', label: 'pilote qui n’a jamais vu le LYL', name: 'Jamais vu le LYL', home: 'les 8 autres circuits, à 80 kg', brain: NEVER_LYL });
   for (const t of TRACKS) {
     if (t.id === DEF.id) continue;
     const b = brainOf(brainKeyOf(t.id, S.kartId, S.weather)) ?? brainOf(brainKeyOf(t.id, S.kartId, 'sec'));
     const n = t.short ?? t.name;
-    if (b) out.push({ id: t.id, label: `pilote ${n.startsWith('Le ') ? 'du ' + n.slice(3) : 'de ' + n}`, name: n, home: `${n} (${fmtLap(b.lap)})`, brain: b });
+    if (b) out.push({ id: t.id, label: `pilote ${of(n)}`, name: n, home: `${n} (${fmtLap(b.lap)})`, brain: b });
+  }
+  for (const p of savedPilots()) {
+    const b = asDriver(p.brain);
+    if (!b) continue;
+    const gen = `génération ${fr(p.brain.gen + 1)}`;
+    const lap = Number.isFinite(b.lap) && b.lap ? fmtLap(b.lap) : 'pas encore de tour propre';
+    out.push({ id: p.id, label: `pilote ${of(p.trackName)} à la ${gen}`, name: `${p.trackName} · gén. ${fr(p.brain.gen + 1)}`, home: `${p.trackName}, ${gen} (${lap})`, brain: b, saved: true });
   }
   return out;
 }
@@ -649,7 +724,8 @@ async function renderGuests(): Promise<void> {
     const run = guestRuns.get(guestKey(g));
     const here = run ? (run.result.completed ? `<b>${outcome(run.result)}</b>` : `<span class="neg">${outcome(run.result)}</span>`) : '<span class="faint">test en cours…</span>';
     return `<tr><td class="nm">${g.name}</td><td>${g.home}</td><td class="num">${here}</td>` +
-      `<td class="acts"><button class="btn small" data-witness="${g.id}"${run ? '' : ' disabled'}>Faire rouler ici</button> <button class="btn small" data-seed="${g.id}">Partir de lui</button></td></tr>`;
+      `<td class="acts"><button class="btn small" data-witness="${g.id}"${run ? '' : ' disabled'}>Faire rouler ici</button> <button class="btn small" data-seed="${g.id}">Partir de lui</button>` +
+      `${g.saved ? ` <button class="btn small" data-remove="${g.id}" title="Retirer ce pilote sauvé">Retirer</button>` : ''}</td></tr>`;
   }).join('');
   $('guest-empty').hidden = list.length > 0;
   $('guest-rows').closest('.tablewrap')!.toggleAttribute('hidden', list.length === 0);
@@ -668,6 +744,11 @@ async function renderGuests(): Promise<void> {
 $('guest-rows').addEventListener('click', (e) => {
   const btn = (e.target as HTMLElement).closest('button');
   if (!btn) return;
+  if (btn.dataset.remove) {
+    LS.set('saved-pilots', savedPilots().filter((p) => p.id !== btn.dataset.remove));
+    void renderGuests();
+    return;
+  }
   const g = guests().find((x) => x.id === (btn.dataset.witness ?? btn.dataset.seed));
   if (!g) return;
   if (btn.dataset.witness) {
@@ -677,7 +758,7 @@ $('guest-rows').addEventListener('click', (e) => {
     S.ghostMode = 'guest';
     $<HTMLSelectElement>('ghost').value = 'guest';
     void refreshGhost();
-    $('guest-msg').textContent = `Le ${g.label} roule ici en fantôme bleu, à côté de tes pilotes en direct comme en replay.`;
+    $('guest-msg').textContent = `Le ${g.label} roule ici en fantôme jaune, à côté de tes pilotes en direct comme en replay.`;
     $('view3d').scrollIntoView({ behavior: 'smooth', block: 'center' });
   } else {
     S.running = false;
@@ -941,7 +1022,12 @@ function tick(now: number): void {
   const live = S.mode === 'live' && S.live.traj.some(Boolean);
   if (live) {
     if (liveDone() && S.live.pending) startLive(S.live.pending);
-    if (S.play.playing) S.live.el += dt * S.play.rate;
+    if (S.play.playing) {
+      const was = S.live.countdown;
+      S.live.countdown = Math.max(-1, was - dt);
+      if (was <= 0) S.live.el += dt * S.play.rate;
+    }
+    showCountdown(S.live.countdown);
     const el = S.live.el;
     let leader = -1;
     let leaderV = 0;
@@ -987,6 +1073,7 @@ function tick(now: number): void {
     if (frame % 3 === 0) liveHud(leader, leaderV, el, leaderThr, leaderBrk);
   } else {
     scene.setCrowd([], -1);
+    showCountdown(0);
   }
   if (!live && S.run) {
     const run = S.run;
@@ -1025,6 +1112,7 @@ function showView(v: string): void {
     sizeMinimap();
     drawEvoNow();
     drawTelNow(-1);
+    learn.redraw();
   });
 }
 window.addEventListener('hashchange', () => showView(location.hash.slice(1)));

@@ -88,6 +88,8 @@ export class Trainer {
   /** Trajectories of the last generation (index = candidate) and their best clean index. */
   lastTraj: (Float32Array | undefined)[] = [];
   lastBestIndex = -1;
+  /** Highest-fitness candidate of the last generation, clean lap or not (the driver to save before any record). */
+  fittest: { params: Float64Array; gen: number } | null = null;
 
   async step(): Promise<GenStats> {
     const t0 = performance.now();
@@ -125,6 +127,8 @@ export class Trainer {
       wallMs: 0,
     };
     this.lastBestIndex = bestI;
+    const top = fit.indexOf(stats.best);
+    this.fittest = { params: sampleCandidate(sample, top, new Float64Array(es.dim)), gen: es.gen };
     if (bestI >= 0) {
       const params = sampleCandidate(sample, bestI, new Float64Array(es.dim));
       this.perGen.push({ gen: es.gen, lap: bestLap, params });
@@ -143,9 +147,17 @@ export class Trainer {
   }
 
   brain(): Brain | null {
-    if (!this.best) return null;
+    return this.best ? this.toBrain(this.best.params, this.best.lap, this.best.gen) : null;
+  }
+
+  /** Best driver so far: the record holder, or before any clean lap the fittest of the last generation (lap NaN). */
+  snapshot(): Brain | null {
+    return this.brain() ?? (this.fittest ? this.toBrain(this.fittest.params, NaN, this.fittest.gen) : null);
+  }
+
+  private toBrain(params: Float64Array, lap: number, gen: number): Brain {
     return {
-      shape: driverShape(this.cfg.world.hidden).sizes, params: Array.from(this.best.params), lap: this.best.lap, gen: this.best.gen,
+      shape: driverShape(this.cfg.world.hidden).sizes, params: Array.from(params), lap, gen,
       kart: this.cfg.world.kart, track: this.cfg.world.track.id, scale: this.cfg.world.scale, createdAt: new Date().toISOString(),
     };
   }
