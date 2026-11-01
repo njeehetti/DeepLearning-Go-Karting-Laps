@@ -124,6 +124,7 @@ const S = {
     gen: -1,
     lap: NaN,
     prevLap: NaN,
+    newLap: NaN,
     /** Playback time of the generation being shown (s). */
     el: 0,
     /** Start countdown of the first generation (s left before the green light; then negative while "go" shows). */
@@ -444,10 +445,12 @@ interface LiveGen {
   gen: number;
   lap: number;
   prevLap: number;
+  /** Fastest clean lap of the new drivers, without the champion driving again. */
+  newLap: number;
 }
 function startLive(g: LiveGen): void {
   // the first generation lines up on the grid and waits for 3, 2, 1, go
-  Object.assign(S.live, { traj: g.traj, best: g.best, gen: g.gen, lap: g.lap, prevLap: g.prevLap, el: 0, pending: null, countdown: g.gen === 0 ? 3 : 0 });
+  Object.assign(S.live, { traj: g.traj, best: g.best, gen: g.gen, lap: g.lap, prevLap: g.prevLap, newLap: g.newLap, el: 0, pending: null, countdown: g.gen === 0 ? 3 : 0 });
   S.live.hints.fill(0);
   S.live.dist.fill(0);
   S.live.init.fill(0);
@@ -488,7 +491,7 @@ function onGen(tr: Trainer, s: GenStats): void {
   $('s-time').textContent = `${fr(S.computeMs / 1000)} s`;
   if (tr.lastTraj.some(Boolean)) {
     const h = tr.history;
-    const g: LiveGen = { traj: tr.lastTraj, best: tr.lastBestIndex, gen: s.gen, lap: s.bestLap, prevLap: h.length > 1 ? h[h.length - 2].bestLap : NaN };
+    const g: LiveGen = { traj: tr.lastTraj, best: tr.lastBestIndex, gen: s.gen, lap: s.bestLap, prevLap: h.length > 1 ? h[h.length - 2].bestLap : NaN, newLap: s.newLap };
     if (!S.live.traj.some(Boolean) || liveDone()) startLive(g);
     else S.live.pending = g;
   }
@@ -992,13 +995,19 @@ function liveHud(leader: number, v: number, el: number, thr: number, brk: number
   const btn = $('h-catch');
   btn.hidden = S.pace === 'follow' ? !S.running : !L.pending;
   btn.textContent = S.pace === 'follow' ? 'Génération suivante' : 'Voir la dernière génération';
-  $('h-corner').textContent = leader >= 0 ? `En tête : pilote n°${leader + 1}${leader === L.best ? ' (meilleur tour de la génération)' : ''}` : '–';
+  // elitism: the record holder drives again every generation, so without a new driver beating it the
+  // generation best is the same lap again; say so, and show what the new drivers did
+  const champion = Number.isFinite(L.lap) && !(L.newLap <= L.lap + 0.0005);
+  $('h-corner').textContent = leader >= 0 ? `En tête : pilote n°${leader + 1}${leader === L.best ? (champion ? ' (le champion, qui refait son record)' : ' (meilleur tour de la génération)') : ''}` : '–';
   let delta = '';
   if (Number.isFinite(L.lap) && Number.isFinite(L.prevLap)) {
     const d = L.lap - L.prevLap;
     delta = d < -0.0005 ? ` · −${fr(-d, 3)} s sur la génération ${L.gen}` : ` · égal à la génération ${L.gen}`;
   }
-  $('h-advice').textContent = Number.isFinite(L.lap)
+  const rookies = Number.isFinite(L.newLap) ? `meilleur nouveau pilote ${fmtLap(L.newLap)} (+${fr(L.newLap - L.lap, 2)} s)` : 'aucun nouveau pilote sans sortie de piste';
+  $('h-advice').textContent = champion
+    ? `Record ${fmtLap(L.lap)} pas encore battu : le champion le refait · ${rookies}`
+    : Number.isFinite(L.lap)
     ? `Meilleur tour de cette génération : ${fmtLap(L.lap)}${delta}`
     : L.gen === 0
       ? 'Première génération : ils découvrent la piste et ne savent pas encore rouler'
@@ -1122,11 +1131,12 @@ function renderGens(tr: Trainer): void {
   const h = tr.history;
   const rows: string[] = [];
   for (let i = h.length - 1; i >= 0 && rows.length < 6; i--) {
+    // the new drivers' best, not the champion who drives its record again: against the record so far
     const s = h[i];
     const prev = i > 0 ? h[i - 1].bestLap : NaN;
-    const d = Number.isFinite(s.bestLap) && Number.isFinite(prev) ? s.bestLap - prev : NaN;
-    const dTxt = Number.isFinite(d) ? (d < -0.0005 ? `−${fr(-d, 3)}` : '=') : '–';
-    rows.push(`<li><span>Génération ${s.gen + 1}</span><span>${fmtLap(s.bestLap)}</span><span class="d${d < -0.0005 ? ' pos' : ''}">${dTxt}</span></li>`);
+    const d = Number.isFinite(s.newLap) && Number.isFinite(prev) ? s.newLap - prev : NaN;
+    const dTxt = Number.isFinite(d) ? (d < -0.0005 ? `−${fr(-d, 3)}` : `+${fr(d, 2)}`) : '–';
+    rows.push(`<li><span>Génération ${s.gen + 1}</span><span>${fmtLap(s.newLap)}</span><span class="d${d < -0.0005 ? ' pos' : ''}">${dTxt}</span></li>`);
   }
   $('gen-list').innerHTML = rows.join('') || '<li class="empty">Aucune génération pour l’instant</li>';
 }

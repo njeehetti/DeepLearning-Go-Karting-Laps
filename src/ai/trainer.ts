@@ -33,6 +33,8 @@ export interface GenStats {
   cleanRate: number;
   /** Fastest clean lap from the start line among this generation's candidates (s), NaN if none. */
   bestLap: number;
+  /** Same, without the champion who drives again (elitism): what the new drivers of this generation did. */
+  newLap: number;
   /** Steering activity of that driver (|Δ command| per second). */
   bestSteer: number;
   sigma: number;
@@ -104,9 +106,11 @@ export class Trainer {
     let bestLap = NaN;
     let bestI = -1;
     let bestSteer = NaN;
+    let newLap = NaN;
     res.forEach((r, i) => {
       completedEp += r.completed;
       cleanEp += r.clean;
+      if (r.lapClean && Number.isFinite(r.lap) && !(i === 1 && sample.elite) && !(r.lap >= newLap)) newLap = r.lap;
       if (r.lapClean && Number.isFinite(r.lap) && !(r.lap >= bestLap)) {
         bestLap = r.lap;
         bestI = i;
@@ -121,6 +125,7 @@ export class Trainer {
       completion: completedEp / nEp,
       cleanRate: cleanEp / nEp,
       bestLap,
+      newLap,
       bestSteer,
       sigma: es.sigma,
       timeWeight: this.timeWeight,

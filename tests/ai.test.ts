@@ -100,6 +100,8 @@ describe('entraînement', () => {
     let prev = Infinity;
     for (let g = 0; g < 12; g++) {
       const s = await tr.step();
+      // the new drivers' best leaves the champion out: never faster than the generation best
+      if (Number.isFinite(s.newLap)) expect(s.newLap).toBeGreaterThanOrEqual(s.bestLap - 1e-9);
       if (Number.isFinite(s.bestLap)) {
         expect(s.bestLap).toBeLessThanOrEqual(prev + 1e-9);
         prev = s.bestLap;
