@@ -45,7 +45,7 @@ const fmt = (T: number) => (Number.isFinite(T) ? `${Math.floor(T / 60)}:${(T % 6
 const c = DEFAULT_CALIBRATION[kartId];
 const world: WorldSpec = {
   track: def, scale: 'official',
-  kart: { kartId, mu: c.mu, powerScale: c.powerScale, vTopKmh: c.vTopKmh, transmission: c.transmission, driver: parseFloat(arg('driver', String(c.driver))), weather: arg('weather', 'sec') as Weather },
+  kart: { kartId, mu: parseFloat(arg('mu', String(c.mu))), powerScale: parseFloat(arg('power', String(c.powerScale))), vTopKmh: c.vTopKmh, transmission: c.transmission, driver: parseFloat(arg('driver', String(c.driver))), weather: arg('weather', 'sec') as Weather },
   ...(otherIds.length ? { others: otherIds.map(loadTrack) } : {}),
   ...(hidden ? { hidden } : {}),
 };
